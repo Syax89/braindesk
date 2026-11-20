@@ -1,0 +1,16 @@
+#!/usr/bin/env python3
+# brain-key DISPOSITIVO CODICE [ms]: simula un tasto (pressione e rilascio)
+# su un dispositivo di input indicato per nome, es.
+#   brain-key brain-kbd-gpio 172          # Home
+#   brain-key "Brain Power Button" 116 2000   # accensione tenuto 2 s
+import glob, struct, sys, time
+name, code = sys.argv[1], int(sys.argv[2])
+hold = (int(sys.argv[3]) if len(sys.argv) > 3 else 80) / 1000
+for n in glob.glob('/sys/class/input/event*/device/name'):
+    if open(n).read().strip() == name:
+        f = open('/dev/input/' + n.split('/')[4], 'wb', buffering=0)
+        break
+else:
+    sys.exit('dispositivo non trovato: ' + name)
+def ev(t, c, v): f.write(struct.pack('llHHi', 0, 0, t, c, v))
+ev(1, code, 1); ev(0, 0, 0); time.sleep(hold); ev(1, code, 0); ev(0, 0, 0)

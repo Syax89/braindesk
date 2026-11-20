@@ -62,7 +62,7 @@ microSD card; BrainDesk starts from there and focuses on three things only:
 | Audio (speaker, microphone, headphones with detection) | ✅ |
 | Battery charging under Linux (it never charged before) | ✅ |
 | Clock shared with Windows CE, no drift | ✅ |
-| Power button, suspend with wake-up (button, USB, alarm) | ✅ kernel · 🔧 policy in the shell |
+| Power button, suspend with wake-up (button, USB, alarm), auto-suspend, power saving mode, battery time estimate | ✅ |
 | Brightness, dimming and screen-off when idle | ✅ |
 | Rescue boot with the stock kernel (three resets) | ✅ |
 | Compressed swap in RAM (zram) | ✅ |

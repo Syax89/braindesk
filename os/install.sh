@@ -4,7 +4,7 @@ set -e
 cd "$(dirname "$0")"
 [ -x brainbar ] || gcc -O2 -o brainbar brainbar.c $(pkg-config --cflags --libs xft x11)
 sudo install -m 755 brainbar brain-video brain-view brain-rotate brain-brightness /usr/local/bin/
-sudo install -m 755 pxpvideo pxpwin brainshot brain-screenshot brain-ctl brain-tap early/brain-session boot/brain-trial /usr/local/bin/
+sudo install -m 755 pxpvideo pxpwin brainshot brain-screenshot brain-ctl brain-tap brain-key early/brain-session boot/brain-trial /usr/local/bin/
 for b in brainshell brainshell-x11 brainplay; do [ -x $b ] && sudo install -m 755 $b /usr/local/bin/; done
 # avvio rapido: interfaccia prima di systemd, X senza GLX, mappa tastiera in cache
 sudo install -m 755 early/brain-preinit early/brain-ui early/brain-shell-session early/brain-xconf \

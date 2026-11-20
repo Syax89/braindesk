@@ -7,7 +7,7 @@ xdotool key 1 2 asterisk 3 Return 7 slash 8 Return 1 comma 5; sleep 0.5
 shot $D-calc
 tap 30 68
 tap 99 180 0.6
-drag 600 400 600 150 12 16 1.2
+drag 600 400 600 150 12 16 2.5
 shot $D-settings
 tap 30 68
 tap 427 348; shot $D-stub

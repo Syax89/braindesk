@@ -62,7 +62,7 @@ microSD; BrainDesk parte da lì e punta a tre cose sole:
 | Audio (altoparlante, microfono, cuffie con rilevamento) | ✅ |
 | Ricarica della batteria sotto Linux (prima non caricava mai) | ✅ |
 | Orologio condiviso con Windows CE, senza deriva | ✅ |
-| Tasto di accensione, sospensione con risveglio (tasto, USB, sveglia) | ✅ kernel · 🔧 politica nella shell |
+| Tasto di accensione, sospensione con risveglio (tasto, USB, sveglia), sospensione automatica, risparmio energetico, stima dell'autonomia | ✅ |
 | Luminosità, attenuazione e spegnimento dello schermo a riposo | ✅ |
 | Avvio di soccorso col kernel originale (tre reset) | ✅ |
 | Swap compresso in RAM (zram) | ✅ |
