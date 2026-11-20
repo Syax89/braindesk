@@ -13,7 +13,9 @@ scene() {
 	echo "key space 300"
 	# app X aperta: niente sospensione
 	echo "tap $BACK 700"
-	echo "tap $TRM 900"
+	# in verticale "In riproduzione" sposta la griglia: Terminale dalla ricerca
+	echo "type term"
+	echo "key Return 900"
 	echo "expect xapp=running"
 	echo "wait 4000"
 	echo "expect power=idle"

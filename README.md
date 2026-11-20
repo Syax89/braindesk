@@ -1,235 +1,234 @@
 # BrainDesk
 
-**Un sistema operativo touch, veloce e leggero per il dizionario elettronico SHARP Brain PW-SH5.**
+🇬🇧 English · 🇮🇹 [Italiano](README.it.md)
 
-BrainDesk trasforma un dizionario giapponese del 2015 (processore ARM9 a 480 MHz,
-112 MB di RAM, nessuna GPU) in un piccolo computer tascabile con interfaccia touch,
-temi, animazioni, musica, video, foto, note e terminale. Parte dalla microSD
-senza toccare il Windows CE originale e mostra l'interfaccia **1,9 secondi** dopo
-l'avvio del kernel.
+**A fast, lightweight touch operating system for the SHARP Brain PW-SH5 electronic dictionary.**
+
+BrainDesk turns a 2015 Japanese dictionary (480 MHz ARM9 CPU, 112 MB of RAM, no GPU)
+into a small pocket computer with a touch interface, themes, animations, music,
+video, photos, notes and a terminal. It boots from the microSD card without touching
+the original Windows CE, and shows its interface **1.9 seconds** after the kernel
+starts.
 
 <p align="center">
-  <img src="docs/images/device-home-aurora.png" width="640" alt="Home di BrainDesk sul Brain (tema Aurora)">
+  <img src="docs/images/device-home-aurora.png" width="640" alt="BrainDesk home screen on the Brain (Aurora theme)">
 </p>
 
-> Tutte le immagini `device-*` sono catture reali della memoria video del Brain;
-> le altre vengono dai test automatici della shell (stesso codice, stesso formato
-> RGB565 a 854×480).
+> All `device-*` images are real captures of the Brain's video memory; the others
+> come from the shell's automated tests (same code, same RGB565 format at 854×480).
+> The user interface itself is in Italian.
 
 ---
 
-## Indice
+## Contents
 
-- [Perché](#perché)
-- [Cosa c'è oggi](#cosa-cè-oggi)
-- [Numeri misurati sul dispositivo](#numeri-misurati-sul-dispositivo)
-- [Architettura](#architettura)
-- [L'interfaccia: BrainShell](#linterfaccia-brainshell)
-- [Gestione energetica](#gestione-energetica)
-- [Tasti](#tasti)
-- [Il kernel: cosa abbiamo aggiunto](#il-kernel-cosa-abbiamo-aggiunto)
-- [Accelerazione hardware](#accelerazione-hardware)
-- [Installazione](#installazione)
-- [Compilare](#compilare)
-- [Struttura del repository](#struttura-del-repository)
-- [Come ci siamo arrivati](#come-ci-siamo-arrivati)
-- [Cosa faremo](#cosa-faremo)
-- [Licenze e riconoscimenti](#licenze-e-riconoscimenti)
+- [Why](#why)
+- [What works today](#what-works-today)
+- [Numbers measured on the device](#numbers-measured-on-the-device)
+- [Architecture](#architecture)
+- [The interface: BrainShell](#the-interface-brainshell)
+- [Power management](#power-management)
+- [Keys](#keys)
+- [The kernel: what we added](#the-kernel-what-we-added)
+- [Hardware acceleration](#hardware-acceleration)
+- [Installation](#installation)
+- [Building](#building)
+- [Repository layout](#repository-layout)
+- [How we got here](#how-we-got-here)
+- [Roadmap](#roadmap)
+- [Licences and credits](#licences-and-credits)
 
 ---
 
-## Perché
+## Why
 
-Il PW-SH5 ha un bel pannello da 5", tastiera QWERTY, touch, altoparlante e una
-batteria al litio, ma il suo software è solo giapponese e chiuso. Il progetto
-[Brainux](https://github.com/brain-hackers) permette già di avviare Debian dalla
-microSD; BrainDesk parte da lì e punta a tre cose sole:
+The PW-SH5 has a nice 5" panel, a QWERTY keyboard, touch, a speaker and a lithium
+battery, but its software is Japanese-only and closed. The
+[Brainux](https://github.com/brain-hackers) project can already boot Debian from the
+microSD card; BrainDesk starts from there and focuses on three things only:
 
-1. **grafica curata e usabilità** con il dito e con la tastiera;
-2. **avvio il più rapido possibile**;
-3. **consumo minimo** di memoria, CPU ed energia.
+1. **polished graphics and usability**, with a finger and with the keyboard;
+2. **the fastest possible boot**;
+3. **minimal use** of memory, CPU and energy.
 
-## Cosa c'è oggi
+## What works today
 
-| Area | Stato |
+| Area | Status |
 |---|---|
-| Interfaccia touch (BrainShell) senza X11, temi, animazioni | ✅ sul dispositivo |
-| App: Impostazioni, Orologio (cronometro, timer), Calcolatrice, Esplora file, Galleria, Musica, Video, Note, Terminale | ✅ sul dispositivo |
-| Lettore multimediale nativo con video accelerato dal PXP | ✅ 20 fps, 0 fotogrammi persi |
-| Schermo: aggiornamenti per righe, rotazione, overlay video | ✅ |
-| Audio (altoparlante, microfono, cuffie con rilevamento) | ✅ |
-| Ricarica della batteria sotto Linux (prima non caricava mai) | ✅ |
-| Orologio condiviso con Windows CE, senza deriva | ✅ |
-| Tasto di accensione, sospensione con risveglio (tasto, USB, sveglia) | ✅ kernel · 🔧 politica nella shell |
-| Luminosità, attenuazione e spegnimento dello schermo a riposo | ✅ |
-| Avvio di soccorso col kernel originale (tre reset) | ✅ |
-| Swap compresso in RAM (zram) | ✅ |
-| Tasti dizionario (国語, 英和, Brain English, cronologia…) con funzioni proprie | 🔜 |
+| Touch interface (BrainShell) without X11, themes, animations | ✅ on the device |
+| Apps: Settings, Clock (stopwatch, timer), Calculator, File explorer, Gallery, Music, Video, Notes, Terminal | ✅ on the device |
+| Native media player with PXP-accelerated video | ✅ 20 fps, 0 dropped frames |
+| Display: row-based updates, rotation, video overlay | ✅ |
+| Audio (speaker, microphone, headphones with detection) | ✅ |
+| Battery charging under Linux (it never charged before) | ✅ |
+| Clock shared with Windows CE, no drift | ✅ |
+| Power button, suspend with wake-up (button, USB, alarm) | ✅ kernel · 🔧 policy in the shell |
+| Brightness, dimming and screen-off when idle | ✅ |
+| Rescue boot with the stock kernel (three resets) | ✅ |
+| Compressed swap in RAM (zram) | ✅ |
+| Dictionary keys (国語, 英和, Brain English, history…) with their own functions | 🔜 |
 
-## Numeri misurati sul dispositivo
+## Numbers measured on the device
 
-<p align="center"><img src="docs/images/avvio.svg" width="760" alt="Tempo di avvio"></p>
+<p align="center"><img src="docs/images/avvio.svg" width="760" alt="Boot time"></p>
 
-| Misura | Prima | BrainDesk |
+| Measurement | Before | BrainDesk |
 |---|---|---|
-| Interfaccia pronta dopo l'avvio del kernel | ≈ 85 s | **1,9 s** |
-| Primo fotogramma della shell dopo il suo avvio | – | **0,24 s** |
-| RAM usata con l'interfaccia aperta (su 112 MB) | 39–45 MB (con X) | **33 MB** |
-| Memoria della shell | – | ≈ 4,5 MB |
-| Video: avvio fino al primo fotogramma | ≈ 19 s (ffmpeg) | **0,6 s** |
-| Video 424×240 a 20 fps | 15 fps (ffmpeg + finestra X) | **20 fps, 0 persi**, sincronia audio 0,3 ms |
-| Conversione+scala di un fotogramma a tutto schermo | 120 ms (CPU) | **6 ms** (PXP) |
-| Aggiornamento del pannello: tutto / riga di testo | 17 ms / 17 ms | 17 ms / **0,5 ms** |
-| Animazione di apertura di un'app | – | 6 fotogrammi in 150 ms (≈ 33 fps) |
-| CPU a riposo | – | 0 risvegli oltre al minuto dell'orologio |
+| Interface ready after kernel start | ≈ 85 s | **1.9 s** |
+| Shell's first frame after it starts | – | **0.24 s** |
+| RAM used with the interface open (of 112 MB) | 39–45 MB (with X) | **33 MB** |
+| Shell memory | – | ≈ 4.5 MB |
+| Video: start to first frame | ≈ 19 s (ffmpeg) | **0.6 s** |
+| 424×240 video at 20 fps | 15 fps (ffmpeg + X window) | **20 fps, 0 dropped**, A/V sync 0.3 ms |
+| Convert + scale one full-screen frame | 120 ms (CPU) | **6 ms** (PXP) |
+| Panel update: full screen / one line of text | 17 ms / 17 ms | 17 ms / **0.5 ms** |
+| App open animation | – | 6 frames in 150 ms (≈ 33 fps) |
+| CPU when idle | – | no wake-ups besides the minute tick of the clock |
 
-## Architettura
+## Architecture
 
-<p align="center"><img src="docs/images/architettura.svg" width="760" alt="Architettura"></p>
+<p align="center"><img src="docs/images/architettura.svg" width="760" alt="Architecture"></p>
 
-**Sequenza di avvio**
+**Boot sequence**
 
-1. Il loader SHARP sulla eMMC trova i file `ed*exe.bin` nella microSD e avvia U-Boot.
-2. `uEnv.txt` sceglie il kernel: normale, *di prova* (una volta sola, per sviluppare
-   senza rischi) o *di soccorso* (il kernel originale di Brainux) se gli ultimi due
-   avvii non sono arrivati in fondo.
-3. Il kernel esegue `brain-preinit` invece di systemd: monta il minimo, avvia
-   **BrainShell** direttamente sullo schermo e poi passa il testimone a systemd,
-   che avvia rete USB, SSH e audio **in parallelo**, senza far aspettare l'utente.
-4. X11 non parte mai all'avvio: lo avvia la shell solo quando apri un'app che ne ha
-   bisogno (il Terminale) e lo chiude quando la chiudi.
+1. SHARP's loader on the eMMC finds the `ed*exe.bin` files on the microSD and starts U-Boot.
+2. `uEnv.txt` picks the kernel: normal, *trial* (once only, to develop without risk)
+   or *rescue* (the stock Brainux kernel) if the last two boots did not complete.
+3. The kernel runs `brain-preinit` instead of systemd: it mounts the bare minimum,
+   starts **BrainShell** directly on the display, then hands over to systemd, which
+   brings up the USB network, SSH and audio **in parallel**, without making the user wait.
+4. X11 never starts at boot: the shell starts it only when you open an app that needs
+   it (the terminal) and stops it when you close that app.
 
-## L'interfaccia: BrainShell
+## The interface: BrainShell
 
-Una shell scritta da zero in C per questo hardware: niente GTK, niente fontconfig,
-niente virgola mobile (la CPU non ha FPU). Disegna in RAM e manda al pannello solo
-i rettangoli cambiati, raggruppati per righe, perché il pannello riceve i pixel per
-righe. A riposo non consuma CPU.
+A shell written from scratch in C for this hardware: no GTK, no fontconfig, no
+floating point (the CPU has no FPU). It draws in RAM and sends the panel only the
+rectangles that changed, grouped into row bands, because the panel receives pixels
+row by row. When idle it uses no CPU.
 
 <p align="center">
-  <img src="docs/images/temi.png" width="760" alt="I sei temi">
-  <br><em>Sei temi: Teal, Brace, Nero, Chiaro, Nord, Aurora (vetro)</em>
+  <img src="docs/images/temi.png" width="760" alt="The six themes">
+  <br><em>Six themes: Teal, Brace, Nero, Chiaro, Nord, Aurora (glass)</em>
 </p>
 
 | | |
 |---|---|
 | <img src="docs/images/app-08-calcolatrice.png" width="400"> | <img src="docs/images/app-05-orologio.png" width="400"> |
-| Calcolatrice (tastiera touch e fisica) | Orologio, cronometro, timer |
+| Calculator (touch and hardware keys) | Clock, stopwatch, timer |
 | <img src="docs/images/app-21-esplora.png" width="400"> | <img src="docs/images/app-29-galleria.png" width="400"> |
-| Esplora: file, testo, immagini, audio/video | Galleria con miniature in cache |
+| File explorer: files, text, images, audio/video | Gallery with cached thumbnails |
 | <img src="docs/images/app-41-musica-in-riproduzione.png" width="400"> | <img src="docs/images/app-35-nota-editor.png" width="400"> |
-| Musica (continua in sottofondo) | Note con editor e salvataggio automatico |
+| Music (keeps playing in the background) | Notes with an editor and autosave |
 | <img src="docs/images/app-10-impostazioni-rapide.png" width="400"> | <img src="docs/images/app-03-impostazioni.png" width="400"> |
-| Impostazioni rapide dalla barra | Impostazioni: schermo, aspetto, energia |
+| Quick settings from the status bar | Settings: display, appearance, power |
 | <img src="docs/images/app-61-modifica-home.png" width="400"> | <img src="docs/images/app-60-calendario.png" width="400"> |
-| Home modificabile (tieni premuto, trascina) | Calendario dall'orologio |
+| Editable home (press and hold, drag) | Calendar from the clock |
 
-**Caratteristiche**
+**Features**
 
-- Home con orologio grande, data, batteria, disco, RAM e brano in riproduzione.
-- Ricerca delle app scrivendo con la tastiera.
-- Animazioni a tempo (non a fotogrammi), interrompibili, con budget di pixel per
-  fotogramma; regolabili su *complete*, *ridotte* o *nessuna*.
-- Verticale e orizzontale: l'interfaccia si ridispone da sola.
-- Lettere accentate senza tasti morti: **Onsei + vocale** (à è é ì ò ù ç, € °).
-- App esterne X11 su richiesta; il tasto Home riporta sempre alla home.
+- Home screen with a large clock, date, battery, disk and RAM gauges and the track now playing.
+- Search apps by typing on the keyboard.
+- Time-based (not frame-based), interruptible animations with a per-frame pixel
+  budget; configurable as *full*, *reduced* or *none*.
+- Portrait and landscape: the interface lays itself out again.
+- Accented letters without dead keys: **Onsei + vowel** (à è é ì ò ù ç, € °).
+- External X11 apps on demand; the Home key always brings you back to the home screen.
 
 <p align="center">
-  <img src="docs/images/device-portrait.png" width="270" alt="Verticale">
+  <img src="docs/images/device-portrait.png" width="270" alt="Portrait">
   &nbsp;
-  <img src="docs/images/device-video-pxp.png" width="480" alt="Video accelerato">
-  <br><em>Sul Brain: interfaccia in verticale · video decodificato da brainplay e scalato dal PXP</em>
+  <img src="docs/images/device-video-pxp.png" width="480" alt="Accelerated video">
+  <br><em>On the Brain: portrait interface · video decoded by brainplay and scaled by the PXP</em>
 </p>
 
-## Gestione energetica
+## Power management
 
-<p align="center"><img src="docs/images/energia.svg" width="760" alt="Stati di alimentazione"></p>
+<p align="center"><img src="docs/images/energia.svg" width="760" alt="Power states"></p>
 
-- **Ricarica**: l'i.MX28 ha un caricatore lineare ma nessun controllore, e senza
-  sistema operativo che lo gestisca la batteria non si carica. Il driver
-  `brain_battery` ripete la macchina a stati del firmware SHARP, ricavata
-  disassemblando Windows CE (`ref/wince/charger-notes.md`): precarica a 80 mA sotto
-  3,0 V, 450 mA da porta USB con ingresso limitato a 480 mA, fine carica sotto
-  50 mA a 4,13 V, ripresa sotto 4,0 V, termistore della batteria tra −5 e 45 °C,
-  protezione termica del chip, timeout.
-- **Livello batteria** dalla tensione a vuoto (curva Li-ion, compensando la
-  caduta durante la carica); spegnimento ordinato a 3,3 V.
-- **Tasto di accensione**: driver nuovo (`Brain Power Button`, linea PSWITCH del
-  blocco di alimentazione) che funziona anche da risveglio.
-- **Sospensione**: `brain-ctl suspend [secondi]`; si risveglia col tasto, collegando
-  il cavo USB o con la sveglia dell'orologio interno (anche per il timer).
-- **Schermo**: attenuazione e spegnimento della retroilluminazione a riposo,
-  luminosità dalla barra.
-- **Memoria**: swap zram da 64 MB in RAM compressa, nessuna scrittura di swap sulla
-  microSD.
+- **Charging**: the i.MX28 has a linear charger but no controller, and unless the
+  operating system runs it the battery never charges. The `brain_battery` driver
+  reproduces the state machine of SHARP's firmware, recovered by disassembling
+  Windows CE (`ref/wince/charger-notes.md`): 80 mA pre-charge below 3.0 V, 450 mA
+  from a USB port with the input limited to 480 mA, charge complete below 50 mA at
+  4.13 V, recharge below 4.0 V, battery thermistor window −5…45 °C, chip thermal
+  protection, safety timeout.
+- **Battery level** from the open-circuit voltage (Li-ion curve, compensating the
+  rise while charging); clean shutdown at 3.3 V.
+- **Power button**: a new driver (`Brain Power Button`, the PSWITCH line of the power
+  block) that also works as a wake-up source.
+- **Suspend**: `brain-ctl suspend [seconds]`; wakes up on the button, when the USB
+  cable is plugged in, or on the internal clock's alarm (also used by the timer).
+- **Display**: backlight dimming and screen-off when idle, brightness from the status bar.
+- **Memory**: 64 MB zram swap in compressed RAM, no swap writes to the microSD.
 
-## Tasti
+## Keys
 
-| Tasto del Brain | Codice | Funzione |
+| Brain key | Code | Function |
 |---|---|---|
-| ホーム (Home) | `KEY_HOMEPAGE` | torna alla home da ovunque, anche dal Terminale |
-| 戻る (Indietro) | `KEY_ESC` | indietro di un livello, chiude dialoghi |
-| Frecce, Invio, Spazio, Backspace | standard | navigazione completa senza touch |
-| 音声 (Onsei) | `KEY_LEFTALT` | Onsei + vocale = lettera accentata |
+| ホーム (Home) | `KEY_HOMEPAGE` | back to the home screen from anywhere, also from the terminal |
+| 戻る (Back) | `KEY_ESC` | one level back, closes dialogs |
+| Arrows, Enter, Space, Backspace | standard | full navigation without touch |
+| 音声 (Onsei) | `KEY_LEFTALT` | Onsei + vowel = accented letter |
 | ページ↑ | `KEY_LEFTCTRL` | Ctrl |
-| 記号 (Simboli) | livello simboli | cifre e punteggiatura |
-| Accensione | `KEY_POWER` | sospendi / risveglia; tenuto premuto: menu di spegnimento |
-| 国語, 英和・和英, Brain English, マイ辞書, 履歴 | PagSu, PagGiù, Tab, Ins, Canc | 🔜 funzioni dedicate |
+| 記号 (Symbols) | symbol layer | digits and punctuation |
+| Power | `KEY_POWER` | suspend / wake; held: power menu |
+| 国語, 英和・和英, Brain English, マイ辞書, 履歴 | PgUp, PgDn, Tab, Ins, Del | 🔜 dedicated functions |
 
-## Il kernel: cosa abbiamo aggiunto
+## The kernel: what we added
 
-Base: `linux-brain` di Brainux, Linux 6.1.70. Tutto in
+Base: Brainux's `linux-brain`, Linux 6.1.70. Everything is in
 [`kernel/patches/0001-brain-pw-sh5-hardware.patch`](kernel/patches/0001-brain-pw-sh5-hardware.patch);
-le modifiche alla scheda sono solo in `imx28-pwsh5.dts`, gli altri modelli Brain
-non cambiano.
+board changes live only in `imx28-pwsh5.dts`, so other Brain models are unaffected.
 
-| Driver | Cosa fa |
+| Driver | What it does |
 |---|---|
-| `drivers/misc/brain_pxp.c` | PXP v2 come `/dev/pxp`: YUV→RGB, scala, rotazione, dma-buf, overlay diretto sullo schermo |
-| `drivers/gpu/drm/tiny/brain.c` | aggiornamenti per righe, rotazione dal device tree, accesso al frame buffer per l'overlay, correzioni |
-| `sound/soc/codecs/bu26154.c`, `sound/soc/mxs/mxs-brain.c` | codec ROHM BU26154 (identificato dal firmware), altoparlante, microfono, cuffie |
-| `drivers/power/supply/brain_battery.c` | batteria, USB, caricatore, termistore, tasto di accensione, risvegli |
-| `drivers/rtc/rtc-stmp3xxx.c` | ora condivisa con Windows CE, quarzo da 32 kHz, sveglia come risveglio |
-| device tree | USB in modalità dispositivo (rete col PC), tasto Home dedicato, nodi audio/PXP/batteria |
-| config | CMA 8 MB, zram |
+| `drivers/misc/brain_pxp.c` | PXP v2 as `/dev/pxp`: YUV→RGB, scaling, rotation, dma-buf, direct overlay onto the display |
+| `drivers/gpu/drm/tiny/brain.c` | row-based updates, rotation from the device tree, frame-buffer access for the overlay, fixes |
+| `sound/soc/codecs/bu26154.c`, `sound/soc/mxs/mxs-brain.c` | ROHM BU26154 codec (identified from the firmware), speaker, microphone, headphones |
+| `drivers/power/supply/brain_battery.c` | battery, USB, charger, thermistor, power button, wake-up sources |
+| `drivers/rtc/rtc-stmp3xxx.c` | time shared with Windows CE, 32 kHz crystal, alarm as a wake-up source |
+| device tree | USB in device mode (network to the PC), dedicated Home key, audio/PXP/battery nodes |
+| config | 8 MB CMA, zram |
 
-Una revisione indipendente del codice è in [`ref/review-kernel.md`](ref/review-kernel.md).
+An independent review of the code is in [`ref/review-kernel.md`](ref/review-kernel.md).
 
-## Accelerazione hardware
+## Hardware acceleration
 
-L'i.MX28 non ha GPU né blitter 2D: l'unico motore grafico è il **PXP** (Pixel
-Pipeline). BrainDesk lo usa dove conviene davvero:
+The i.MX28 has no GPU and no 2D blitter: its only graphics engine is the **PXP**
+(Pixel Pipeline). BrainDesk uses it where it really pays off:
 
-- **video**: conversione YUV→RGB e scala direttamente nel frame buffer del
-  pannello, senza copie della CPU (6 ms invece di 120 ms a fotogramma);
-- **rotazione dello schermo**: fatta dal controller del pannello (costo zero);
-- **interfaccia**: resta in software, perché sulle aree piccole il costo d'avvio
-  del PXP supera il lavoro; la vera accelerazione è mandare al pannello solo le
-  righe cambiate.
+- **video**: YUV→RGB conversion and scaling straight into the panel's frame buffer,
+  with no CPU copies (6 ms instead of 120 ms per frame);
+- **screen rotation**: done by the panel controller (zero cost);
+- **interface**: stays in software, because for small areas the PXP's start-up cost
+  exceeds the work itself; the real acceleration is sending the panel only the rows
+  that changed.
 
-## Installazione
+## Installation
 
-> ⚠️ Serve un PW-SH5 con [Brainux](https://github.com/brain-hackers/buildbrain) già
-> sulla microSD e il Brain collegato al PC via USB. La memoria interna (Windows CE)
-> non viene mai modificata: togliendo la microSD torna il dizionario originale.
+> ⚠️ You need a PW-SH5 with [Brainux](https://github.com/brain-hackers/buildbrain)
+> already on the microSD card and the Brain connected to the PC over USB. The internal
+> memory (Windows CE) is never modified: remove the microSD card and the original
+> dictionary comes back.
 
 ```sh
-# 1. kernel e device tree (dalla release o compilati, vedi sotto)
+# 1. kernel and device tree (from the release, or built, see below)
 scp zImage imx28-pwsh5.dtb brain:/tmp/
-ssh brain 'brain-trial /tmp/zImage /tmp/imx28-pwsh5.dtb && sudo reboot'   # prova una volta
-# 2. sistema e interfaccia
+ssh brain 'brain-trial /tmp/zImage /tmp/imx28-pwsh5.dtb && sudo reboot'   # try it once
+# 2. system and interface
 scp -r os brain:~/braindesk && ssh brain 'cd ~/braindesk && sh install.sh && sudo reboot'
 ```
 
-`brain-trial` prova un kernel una sola volta: se si blocca, un reset riporta a quello
-precedente. Tre reset ravvicinati avviano il kernel originale di Brainux.
+`brain-trial` boots a kernel only once: if it hangs, one reset goes back to the
+previous one. Three quick resets boot the stock Brainux kernel.
 
-## Compilare
+## Building
 
-Serve Docker. Tutto si compila con gli stessi compilatori di Debian armel del Brain.
+You need Docker. Everything builds with the same Debian armel toolchain the Brain runs.
 
 ```sh
-# kernel (risultato in out/)
+# kernel (output in out/)
 docker build -t brain-kbuild kernel/docker
 docker run --rm -v brain-kernel:/kernel -v "$PWD/kernel":/src brain-kbuild /src/docker/build-kernel.sh
 
@@ -237,83 +236,82 @@ docker run --rm -v brain-kernel:/kernel -v "$PWD/kernel":/src brain-kbuild /src/
 docker build -t brain-userland kernel/docker/userland
 docker run --rm -v "$PWD/shell":/src brain-userland make -C /src armel
 
-# lettore multimediale (scarica e compila FFmpeg minimo)
+# media player (downloads and builds a minimal FFmpeg)
 cd player && ./build.sh image && ./build.sh ffmpeg-armel && ./build.sh armel
 ```
 
-I test della shell girano su PC senza il Brain (Xvfb e un backend in memoria):
-vedi [`shell/README.md`](shell/README.md).
+The shell's tests run on a PC without the Brain (Xvfb and an in-memory backend):
+see [`shell/README.md`](shell/README.md) (in Italian).
 
-## Struttura del repository
+## Repository layout
 
 ```
-kernel/    patch del kernel, config, ambiente di compilazione Docker
-shell/     BrainShell: toolkit grafico, compositore, app, test
-player/    brainplay: lettore multimediale con FFmpeg minimo e PXP
-os/        script di sistema: avvio rapido, brain-ctl, sospensione, installazione
-driver/    strumenti di prova del PXP e del pannello
-tools/     proxy per apt via USB
-ref/       note di reverse engineering (caricatore SHARP), revisione del kernel
-docs/      immagini di questo documento
+kernel/    kernel patch, config, Docker build environment
+shell/     BrainShell: graphics toolkit, compositor, apps, tests
+player/    brainplay: media player with a minimal FFmpeg and the PXP
+os/        system scripts: fast boot, brain-ctl, suspend, installer
+driver/    PXP and panel test tools
+tools/     apt proxy over USB
+ref/       reverse-engineering notes (SHARP charger), kernel review
+docs/      images for this document
 ```
 
-## Come ci siamo arrivati
+## How we got here
 
-1. **USB e Linux**: modalità USB del dizionario, Brainux sulla microSD, rete NCM
-   via USB e SSH, internet tramite un proxy sul PC.
-2. **Driver mancanti**: PXP da zero, codec audio identificato leggendo il firmware
-   Windows CE, orologio condiviso con WinCE, batteria, rilevamento cuffie (ricavato
-   disassemblando il driver audio WinCE), avvio diretto di Linux.
-3. **Grafica**: aggiornamenti per righe del pannello (da 17 ms a 0,5 ms per una riga
-   di testo), video in finestra e a tutto schermo col PXP.
-4. **Un blocco all'avvio** dopo una scarica completa si è rivelato un bug nostro: i
-   comandi al pannello partivano col controller in modalità DMA. Da lì sono nati
-   l'avvio di prova *una volta sola* e il kernel di soccorso, e la scoperta che sotto
-   Linux la batteria non si caricava mai.
-5. **Caricatore**: parametri copiati dal firmware SHARP disassemblato.
-6. **Interfaccia**: BrainShell con sei temi, animazioni e otto app, poi il lettore
-   brainplay (da 19 s a 0,6 s), poi la shell senza X (da 8 s a 1,9 s).
-7. **Energia**: tasto di accensione (prima ignorato da Linux), sospensione con tre
-   sorgenti di risveglio, orologio senza deriva.
+1. **USB and Linux**: the dictionary's USB mode, Brainux on the microSD, NCM
+   networking over USB and SSH, internet through a proxy on the PC.
+2. **Missing drivers**: a PXP driver from scratch, the audio codec identified by
+   reading the Windows CE firmware, the clock shared with WinCE, the battery,
+   headphone detection (found by disassembling the WinCE audio driver), direct boot
+   into Linux.
+3. **Graphics**: row-based panel updates (from 17 ms to 0.5 ms for a line of text),
+   windowed and full-screen video with the PXP.
+4. **A boot hang** after a full discharge turned out to be our own bug: panel commands
+   were sent while the controller was in DMA mode. It led to the *once-only* trial
+   boot and the rescue kernel, and to discovering that under Linux the battery never
+   charged at all.
+5. **Charger**: parameters copied from the disassembled SHARP firmware.
+6. **Interface**: BrainShell with six themes, animations and eight apps, then the
+   brainplay player (from 19 s to 0.6 s), then the shell without X (from 8 s to 1.9 s).
+7. **Power**: the power button (previously ignored by Linux), suspend with three
+   wake-up sources, a clock without drift.
 
-Diversi sotto-sistemi sono stati sviluppati in parallelo da agenti separati e
-integrati sul dispositivo: shell, app, lettore, analisi del firmware, revisione dei
-driver.
+Several subsystems were developed in parallel by separate agents and integrated on
+the device: shell, apps, player, firmware analysis, driver review.
 
-## Cosa faremo
+## Roadmap
 
-**Energia e autonomia**
-- Politica completa di sospensione nella shell: tasto di accensione, sospensione
-  automatica dopo l'inattività, niente sospensione col cavo (il caricatore resta
-  sorvegliato), modalità *risparmio energetico*. *(in corso)*
-- Stima del tempo residuo della batteria.
-- Misura reale dei consumi in sospensione e a schermo acceso.
+**Power and battery life**
+- Full suspend policy in the shell: power button, auto-suspend when idle, no suspend
+  on the cable (the charger stays supervised), a *power saving* mode. *(in progress)*
+- Remaining battery time estimate.
+- Real power measurements in suspend and with the screen on.
 
-**Tasti e usabilità**
-- Funzioni proprie per i tasti del dizionario (国語, 英和, Brain English, マイ辞書,
-  履歴), per esempio scorciatoie ad app o al cambio di app.
-- Verifica sul pannello di rotazione verticale e spegnimento a riposo.
+**Keys and usability**
+- Dedicated functions for the dictionary keys (国語, 英和, Brain English, マイ辞書, 履歴),
+  for example app shortcuts or app switching.
+- On-panel check of portrait rotation and idle screen-off.
 
-**Velocità e leggerezza**
-- Terminale nativo nella shell (oggi passa da X, ~11 s per aprirlo).
-- Video senza X: overlay del lettore sotto la barra della shell.
-- Meno servizi systemd e un'immagine di sistema essenziale (oggi 2 GB, 732 pacchetti).
-- Kernel solo per il PW-SH5.
+**Speed and footprint**
+- A native terminal inside the shell (today it goes through X, about 11 s to open).
+- Video without X: the player's overlay beneath the shell's control bar.
+- Fewer systemd services and a minimal system image (today 2 GB, 732 packages).
+- A kernel built only for the PW-SH5.
 
-**Funzioni**
-- Dizionario offline (giapponese–italiano/inglese) e font giapponese.
-- Logo di avvio al posto delle scritte di U-Boot.
-- Rotazione senza riavvio.
+**Features**
+- Offline dictionary (Japanese–Italian/English) and a Japanese font.
+- A boot logo instead of U-Boot's text.
+- Rotation without a reboot.
 
-## Licenze e riconoscimenti
+## Licences and credits
 
-- Patch del kernel e driver: **GPL-2.0** (come Linux). Il resto del codice di
-  questo repository è distribuito con la stessa licenza (vedi `LICENSE`).
-- Componenti di terzi inclusi: `stb_image`/`stb_truetype` (pubblico dominio / MIT),
-  TJpgDec (licenza BSD-like di ChaN), Material Icons (Apache 2.0), font DejaVu
-  (licenza libera Bitstream Vera). FFmpeg, libopus, Tremor e libogg vengono scaricati
-  in fase di compilazione (LGPL/BSD).
-- Basato sul lavoro di [brain-hackers / Brainux](https://github.com/brain-hackers).
-- Il firmware SHARP e i suoi disassemblati non sono inclusi: in `ref/` ci sono solo
-  le note e gli script usati per analizzarlo.
-- SHARP e Brain sono marchi dei rispettivi proprietari; progetto non affiliato.
+- Kernel patch and drivers: **GPL-2.0** (like Linux). The rest of the code in this
+  repository is released under the same licence (see `LICENSE`).
+- Bundled third-party components: `stb_image`/`stb_truetype` (public domain / MIT),
+  TJpgDec (ChaN's BSD-style licence), Material Icons (Apache 2.0), DejaVu fonts
+  (Bitstream Vera free licence). FFmpeg, libopus, Tremor and libogg are downloaded at
+  build time (LGPL/BSD).
+- Built on the work of [brain-hackers / Brainux](https://github.com/brain-hackers).
+- SHARP's firmware and its disassembly are not included: `ref/` only contains the
+  notes and scripts used to analyse it.
+- SHARP and Brain are trademarks of their respective owners; this project is not affiliated.

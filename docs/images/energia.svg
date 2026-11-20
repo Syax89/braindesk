@@ -1,20 +1,20 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 380" font-family="DejaVu Sans, Helvetica, Arial, sans-serif">
 <defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#555"/></marker></defs>
 <rect width="900" height="380" fill="#ffffff"/>
-<text x="450" y="32" text-anchor="middle" font-size="22" font-weight="bold" fill="#1d2433">Gestione energetica</text>
+<text x="450" y="32" text-anchor="middle" font-size="22" font-weight="bold" fill="#1d2433">Power management</text>
 <g font-size="14" text-anchor="middle">
-<rect x="30" y="80" width="170" height="70" rx="12" fill="#e8f5f2" stroke="#2a9d8f"/><text x="115" y="110" font-weight="bold">Attivo</text><text x="115" y="130" font-size="12">CPU in attesa se inattiva</text>
-<rect x="250" y="80" width="170" height="70" rx="12" fill="#eef1fb" stroke="#5468c4"/><text x="335" y="110" font-weight="bold">Attenuato</text><text x="335" y="130" font-size="12">retroilluminazione bassa</text>
-<rect x="470" y="80" width="170" height="70" rx="12" fill="#fdf1e6" stroke="#d4822a"/><text x="555" y="110" font-weight="bold">Schermo spento</text><text x="555" y="130" font-size="12">tutto il resto acceso</text>
-<rect x="690" y="80" width="180" height="70" rx="12" fill="#f3e8f7" stroke="#8e44ad"/><text x="780" y="110" font-weight="bold">Sospeso</text><text x="780" y="130" font-size="12">solo la RAM alimentata</text>
+<rect x="30" y="80" width="170" height="70" rx="12" fill="#e8f5f2" stroke="#2a9d8f"/><text x="115" y="110" font-weight="bold">Active</text><text x="115" y="130" font-size="12">CPU sleeps between events</text>
+<rect x="250" y="80" width="170" height="70" rx="12" fill="#eef1fb" stroke="#5468c4"/><text x="335" y="110" font-weight="bold">Dimmed</text><text x="335" y="130" font-size="12">low backlight</text>
+<rect x="470" y="80" width="170" height="70" rx="12" fill="#fdf1e6" stroke="#d4822a"/><text x="555" y="110" font-weight="bold">Screen off</text><text x="555" y="130" font-size="12">everything else on</text>
+<rect x="690" y="80" width="180" height="70" rx="12" fill="#f3e8f7" stroke="#8e44ad"/><text x="780" y="110" font-weight="bold">Suspended</text><text x="780" y="130" font-size="12">only RAM powered</text>
 <g stroke="#555" stroke-width="2" fill="none" marker-end="url(#a)"><path d="M200 105 H248"/><path d="M420 105 H468"/><path d="M640 105 H688"/><path d="M780 152 C780 230 115 230 115 152"/></g>
-<g font-size="12" fill="#333"><text x="224" y="96">inattività</text><text x="444" y="96">inattività</text><text x="664" y="56">inattività o</text><text x="664" y="72">tasto accensione</text>
-<text x="450" y="226">risveglio: tasto di accensione · cavo USB collegato · sveglia (timer)</text></g>
+<g font-size="12" fill="#333"><text x="224" y="96">idle</text><text x="444" y="96">idle</text><text x="664" y="56">idle or</text><text x="664" y="72">power button</text>
+<text x="450" y="226">wake-up: power button · USB cable plugged in · RTC alarm (timer)</text></g>
 </g>
 <g font-size="13" fill="#333">
-<text x="30" y="276" font-weight="bold">Regole</text>
-<text x="30" y="300">• Con il cavo collegato non si sospende: si spegne solo lo schermo, così il caricatore resta sorvegliato.</text>
-<text x="30" y="322">• Caricatore con i parametri del firmware SHARP: 450 mA, termistore −5…45 °C, fine carica a 4,13 V.</text>
-<text x="30" y="344">• A 3,3 V il kernel spegne il sistema in modo ordinato; avvisi al 15% e al 5%.</text>
+<text x="30" y="276" font-weight="bold">Rules</text>
+<text x="30" y="300">• With the cable plugged in it never suspends: only the screen turns off, so the charger stays supervised.</text>
+<text x="30" y="322">• Charger uses SHARP's firmware parameters: 450 mA, thermistor −5…45 °C, charge complete at 4.13 V.</text>
+<text x="30" y="344">• At 3.3 V the kernel shuts down cleanly; warnings at 15% and 5%.</text>
 </g>
 </svg>

@@ -1,28 +1,28 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 560" font-family="DejaVu Sans, Helvetica, Arial, sans-serif">
 <rect width="900" height="560" fill="#ffffff"/>
-<text x="450" y="34" text-anchor="middle" font-size="22" font-weight="bold" fill="#1d2433">Architettura di BrainDesk</text>
+<text x="450" y="34" text-anchor="middle" font-size="22" font-weight="bold" fill="#1d2433">BrainDesk architecture</text>
 <g font-size="14">
 <rect x="30" y="60" width="840" height="110" rx="12" fill="#e8f5f2" stroke="#2a9d8f"/>
-<text x="46" y="84" font-weight="bold" fill="#1d6b61">Interfaccia (spazio utente)</text>
-<rect x="46" y="96" width="250" height="60" rx="8" fill="#fff" stroke="#2a9d8f"/><text x="171" y="120" text-anchor="middle" font-weight="bold">BrainShell</text><text x="171" y="140" text-anchor="middle" font-size="12">compositore software, temi, app</text>
-<rect x="312" y="96" width="250" height="60" rx="8" fill="#fff" stroke="#2a9d8f"/><text x="437" y="120" text-anchor="middle" font-weight="bold">brainplay</text><text x="437" y="140" text-anchor="middle" font-size="12">FFmpeg minimo, video sul PXP</text>
-<rect x="578" y="96" width="276" height="60" rx="8" fill="#fff" stroke="#2a9d8f"/><text x="716" y="120" text-anchor="middle" font-weight="bold">X11 su richiesta</text><text x="716" y="140" text-anchor="middle" font-size="12">solo per app esterne (Terminale)</text>
+<text x="46" y="84" font-weight="bold" fill="#1d6b61">Interface (user space)</text>
+<rect x="46" y="96" width="250" height="60" rx="8" fill="#fff" stroke="#2a9d8f"/><text x="171" y="120" text-anchor="middle" font-weight="bold">BrainShell</text><text x="171" y="140" text-anchor="middle" font-size="12">software compositor, themes, apps</text>
+<rect x="312" y="96" width="250" height="60" rx="8" fill="#fff" stroke="#2a9d8f"/><text x="437" y="120" text-anchor="middle" font-weight="bold">brainplay</text><text x="437" y="140" text-anchor="middle" font-size="12">minimal FFmpeg, video on the PXP</text>
+<rect x="578" y="96" width="276" height="60" rx="8" fill="#fff" stroke="#2a9d8f"/><text x="716" y="120" text-anchor="middle" font-weight="bold">X11 on demand</text><text x="716" y="140" text-anchor="middle" font-size="12">only for external apps (terminal)</text>
 <rect x="30" y="186" width="840" height="80" rx="12" fill="#eef1fb" stroke="#5468c4"/>
-<text x="46" y="210" font-weight="bold" fill="#33449a">Sistema</text>
-<text x="46" y="234" font-size="13">brain-preinit (interfaccia prima di systemd) · systemd in parallelo · swap zram · brain-ctl (luminosità, volume, schermo, sospensione)</text>
-<text x="46" y="254" font-size="13">Debian 13 armel (Brainux) · avvio da microSD senza toccare Windows CE</text>
+<text x="46" y="210" font-weight="bold" fill="#33449a">System</text>
+<text x="46" y="234" font-size="13">brain-preinit (UI before systemd) · systemd in parallel · zram swap · brain-ctl (brightness, volume, screen, suspend)</text>
+<text x="46" y="254" font-size="13">Debian 13 armel (Brainux) · boots from microSD, Windows CE untouched</text>
 <rect x="30" y="282" width="840" height="130" rx="12" fill="#fdf1e6" stroke="#d4822a"/>
 <text x="46" y="306" font-weight="bold" fill="#9a5612">Kernel Linux 6.1 + patch BrainDesk</text>
 <g font-size="12">
-<rect x="46" y="318" width="196" height="80" rx="8" fill="#fff" stroke="#d4822a"/><text x="144" y="340" text-anchor="middle" font-weight="bold">Schermo</text><text x="144" y="358" text-anchor="middle">righe parziali, rotazione</text><text x="144" y="376" text-anchor="middle">overlay video PXP</text>
-<rect x="252" y="318" width="196" height="80" rx="8" fill="#fff" stroke="#d4822a"/><text x="350" y="340" text-anchor="middle" font-weight="bold">PXP</text><text x="350" y="358" text-anchor="middle">/dev/pxp: YUV→RGB,</text><text x="350" y="376" text-anchor="middle">scala, ruota</text>
-<rect x="458" y="318" width="196" height="80" rx="8" fill="#fff" stroke="#d4822a"/><text x="556" y="340" text-anchor="middle" font-weight="bold">Energia</text><text x="556" y="358" text-anchor="middle">caricatore, batteria, tasto</text><text x="556" y="376" text-anchor="middle">accensione, sospensione</text>
-<rect x="664" y="318" width="190" height="80" rx="8" fill="#fff" stroke="#d4822a"/><text x="759" y="340" text-anchor="middle" font-weight="bold">Audio · RTC</text><text x="759" y="358" text-anchor="middle">codec ROHM BU26154</text><text x="759" y="376" text-anchor="middle">orologio condiviso con WinCE</text>
+<rect x="46" y="318" width="196" height="80" rx="8" fill="#fff" stroke="#d4822a"/><text x="144" y="340" text-anchor="middle" font-weight="bold">Display</text><text x="144" y="358" text-anchor="middle">partial rows, rotation</text><text x="144" y="376" text-anchor="middle">PXP video overlay</text>
+<rect x="252" y="318" width="196" height="80" rx="8" fill="#fff" stroke="#d4822a"/><text x="350" y="340" text-anchor="middle" font-weight="bold">PXP</text><text x="350" y="358" text-anchor="middle">/dev/pxp: YUV→RGB,</text><text x="350" y="376" text-anchor="middle">scale, rotate</text>
+<rect x="458" y="318" width="196" height="80" rx="8" fill="#fff" stroke="#d4822a"/><text x="556" y="340" text-anchor="middle" font-weight="bold">Power</text><text x="556" y="358" text-anchor="middle">charger, battery, power</text><text x="556" y="376" text-anchor="middle">button, suspend</text>
+<rect x="664" y="318" width="190" height="80" rx="8" fill="#fff" stroke="#d4822a"/><text x="759" y="340" text-anchor="middle" font-weight="bold">Audio · RTC</text><text x="759" y="358" text-anchor="middle">codec ROHM BU26154</text><text x="759" y="376" text-anchor="middle">clock shared with WinCE</text>
 </g>
 <rect x="30" y="428" width="840" height="110" rx="12" fill="#f3f3f3" stroke="#888"/>
 <text x="46" y="452" font-weight="bold" fill="#333">Hardware SHARP Brain PW-SH5</text>
-<text x="46" y="476" font-size="13">NXP i.MX283 · ARM926EJ-S 480 MHz · nessuna FPU né GPU · 112 MB RAM</text>
-<text x="46" y="496" font-size="13">pannello ILI9805 854×480 (interfaccia MPU) · touch resistivo · tastiera QWERTY · altoparlante e microfono</text>
-<text x="46" y="516" font-size="13">Li-ion con caricatore lineare integrato · porta micro-USB (rete NCM verso il PC) · microSD</text>
+<text x="46" y="476" font-size="13">NXP i.MX283 · ARM926EJ-S 480 MHz · no FPU, no GPU · 112 MB RAM</text>
+<text x="46" y="496" font-size="13">ILI9805 854×480 panel (MPU interface) · resistive touch · QWERTY keyboard · speaker and microphone</text>
+<text x="46" y="516" font-size="13">Li-ion with on-chip linear charger · micro-USB (NCM network to the PC) · microSD</text>
 </g>
 </svg>
