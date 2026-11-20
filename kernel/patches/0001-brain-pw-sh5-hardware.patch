@@ -124,7 +124,7 @@ index 8a11ca82d..d62eb1eb8 100644
  	}
  	
 diff --git a/drivers/gpu/drm/tiny/brain.c b/drivers/gpu/drm/tiny/brain.c
-index 59c826758..2d4c5f897 100644
+index 59c826758..11cb2488d 100644
 --- a/drivers/gpu/drm/tiny/brain.c
 +++ b/drivers/gpu/drm/tiny/brain.c
 @@ -17,8 +17,11 @@
@@ -147,16 +147,17 @@ index 59c826758..2d4c5f897 100644
  #include <drm/drm_probe_helper.h>
  #include <drm/drm_vblank.h>
  #include <video/mipi_display.h>
-@@ -55,6 +59,8 @@ struct brain_drm_private {
+@@ -55,6 +59,9 @@ struct brain_drm_private {
  	struct platform_device *pdev;
  	struct clk *clk_lcdif;
  	bool enabled;
 +	/* one user of the LCDIF at a time: commits, fbdev and the overlay */
 +	struct mutex hw_lock;
++	unsigned int stuck;		/* aborted transfers, for diagnostics */
  
  	struct drm_simple_display_pipe pipe;
  	struct drm_connector connector;
-@@ -116,6 +122,55 @@ static const struct {
+@@ -116,6 +123,55 @@ static const struct {
  };
  
  
@@ -212,7 +213,7 @@ index 59c826758..2d4c5f897 100644
  static struct brain_drm_private *pipe_to_private(struct drm_simple_display_pipe *pipe)
  {
  	return container_of(pipe, struct brain_drm_private, pipe);
-@@ -139,6 +194,27 @@ static int brain_write_clear_poll(void __iomem *addr, u32 mask, u32 timeout)
+@@ -139,6 +195,27 @@ static int brain_write_clear_poll(void __iomem *addr, u32 mask, u32 timeout)
  	return readl_poll_timeout(addr, reg, !(reg & mask), 0, timeout);
  }
  
@@ -240,7 +241,7 @@ index 59c826758..2d4c5f897 100644
  static int brain_write_byte(struct brain_drm_private *priv, u8 payload, const u8 is_data)
  {
  	
-@@ -164,7 +240,7 @@ static int brain_write_byte(struct brain_drm_private *priv, u8 payload, const u8
+@@ -164,7 +241,7 @@ static int brain_write_byte(struct brain_drm_private *priv, u8 payload, const u8
  	if (brain_clear_poll(priv->base + LCDC_CTRL, CTRL_RUN, TX_TIMEOUT)) {
  		return -ETIMEDOUT;
  	}
@@ -249,7 +250,7 @@ index 59c826758..2d4c5f897 100644
  }
  
  static int brain_reset_block(void __iomem *reset_addr)
-@@ -267,17 +343,18 @@ static void brain_enable(struct drm_simple_display_pipe *pipe,
+@@ -267,17 +344,18 @@ static void brain_enable(struct drm_simple_display_pipe *pipe,
  	if (!drm_dev_enter(pipe->crtc.dev, &idx))
  		return;
  
@@ -270,7 +271,7 @@ index 59c826758..2d4c5f897 100644
  
  	/* Unset DOTCLK */
  	writel(CTRL_MASTER | CTRL_DOTCLK_MODE | CTRL_BYPASS_COUNT, ili->base + LCDC_CTRL + REG_CLR);
-@@ -321,6 +398,16 @@ static void brain_enable(struct drm_simple_display_pipe *pipe,
+@@ -321,6 +399,16 @@ static void brain_enable(struct drm_simple_display_pipe *pipe,
  		mac |= ILI9805_MADCTL_BGR;
  	}
  
@@ -287,7 +288,7 @@ index 59c826758..2d4c5f897 100644
  	brain_write_byte(ili, 0x36, 0); /* Memory Access Control */
  	brain_write_byte(ili, mac, 1);
  
-@@ -354,44 +441,187 @@ static void brain_enable(struct drm_simple_display_pipe *pipe,
+@@ -354,44 +442,203 @@ static void brain_enable(struct drm_simple_display_pipe *pipe,
  	/* Ready to transmit */
  	writel(CTRL_MASTER, ili->base + LCDC_CTRL + REG_SET);
  	ili->enabled = true;
@@ -307,8 +308,8 @@ index 59c826758..2d4c5f897 100644
  	clk_disable_unprepare(ili->clk_lcdif);
 -	return;
 +	mutex_unlock(&ili->hw_lock);
- }
- 
++}
++
 +/*
 + * Point the panel's write window at rows [y0, y1); the column window set in
 + * brain_enable() (full width) stays as it is.
@@ -337,8 +338,8 @@ index 59c826758..2d4c5f897 100644
 +	writel(CTRL1_SET_BYTE_PACKAGING(0xf), ili->base + LCDC_CTRL1 + REG_CLR);
 +	writel(CTRL1_SET_BYTE_PACKAGING(valid), ili->base + LCDC_CTRL1 + REG_SET);
 +	writel(CTRL_MASTER, ili->base + LCDC_CTRL + REG_SET);
-+}
-+
+ }
+ 
 +/*
 + * Send the damaged rows to the panel. The LCDIF has no stride support, so
 + * the update covers whole rows (contiguous in memory); typing, a clock or a
@@ -361,21 +362,41 @@ index 59c826758..2d4c5f897 100644
  		return;
  
 -	if (brain_clear_poll(ili->base + LCDC_CTRL, CTRL_RUN, TX_TIMEOUT)) {
+-		dev_warn(&ili->pdev->dev, "Exceeded timeout\n");
 +	mutex_lock(&ili->hw_lock);
 +	if (!ili->enabled)
 +		goto timeout_exit;
 +
-+	/* a full frame takes 17 ms on the bus: sleep while it drains */
++	/*
++	 * A full frame takes 17 ms on the bus: sleep while it drains. If the
++	 * previous transfer is still running after 100 ms it is stuck: log
++	 * the controller state and abort it, so this update still goes out
++	 * instead of the screen freezing for a second.
++	 */
 +	if (readl_poll_timeout(ili->base + LCDC_CTRL, reg, !(reg & CTRL_RUN),
-+			       200, TX_TIMEOUT)) {
- 		dev_warn(&ili->pdev->dev, "Exceeded timeout\n");
- 		goto timeout_exit;
- 	}
++			       200, 100000)) {
++		dev_warn_ratelimited(&ili->pdev->dev,
++			"stuck transfer: ctrl %08x ctrl1 %08x stat %08x count %08x cur %08x debug %08x\n",
++			readl(ili->base + LCDC_CTRL),
++			readl(ili->base + LCDC_CTRL1),
++			readl(ili->base + LCDC_STAT),
++			readl(ili->base + LCDC_V4_TRANSFER_COUNT),
++			readl(ili->base + LCDC_V4_CUR_BUF),
++			readl(ili->base + LCDC_V4_DEBUG0));
++		ili->stuck++;
++		writel(CTRL_RUN, ili->base + LCDC_CTRL + REG_CLR);
++		writel(CTRL1_FIFO_CLEAR, ili->base + LCDC_CTRL1 + REG_SET);
++		udelay(10);
++		writel(CTRL1_FIFO_CLEAR, ili->base + LCDC_CTRL1 + REG_CLR);
++	}
 +	if (brain_wait_idle(ili)) {
 +		dev_warn(&ili->pdev->dev, "FIFO not drained\n");
-+		goto timeout_exit;
-+	}
-+
+ 		goto timeout_exit;
+ 	}
+ 
+-	writel(dma_obj->dma_addr, ili->base + LCDC_V4_CUR_BUF);
+-	writel(dma_obj->dma_addr, ili->base + LCDC_V4_NEXT_BUF);
+-	writel(TRANSFER_COUNT_SET_VCOUNT(height) | TRANSFER_COUNT_SET_HCOUNT(width),
 +	{
 +		u32 t = clamp(bus_timing, 1u, 15u);
 +
@@ -383,10 +404,7 @@ index 59c826758..2d4c5f897 100644
 +		       TIMING_DATA_HOLD(t) | TIMING_DATA_SETUP(t),
 +		       ili->base + LCDC_TIMING);
 +	}
- 
--	writel(dma_obj->dma_addr, ili->base + LCDC_V4_CUR_BUF);
--	writel(dma_obj->dma_addr, ili->base + LCDC_V4_NEXT_BUF);
--	writel(TRANSFER_COUNT_SET_VCOUNT(height) | TRANSFER_COUNT_SET_HCOUNT(width),
++
 +	if (partial && rect && fb->pitches[0] == width * cpp) {
 +		y0 = clamp_t(int, rect->y1, 0, height);
 +		y1 = clamp_t(int, rect->y2, 0, height);
@@ -482,7 +500,7 @@ index 59c826758..2d4c5f897 100644
  static void brain_update(struct drm_simple_display_pipe *pipe,
  			  struct drm_plane_state *old_state)
  {
-@@ -429,10 +659,7 @@ static int brain_connector_get_modes(struct drm_connector *connector)
+@@ -429,10 +676,7 @@ static int brain_connector_get_modes(struct drm_connector *connector)
  
  	ili = connector_to_private(connector);
  
@@ -494,7 +512,7 @@ index 59c826758..2d4c5f897 100644
  
  	// Equivalent to DRM_SIMPLE_MODE macro
  	modei.type = DRM_MODE_TYPE_DRIVER;
-@@ -536,6 +763,7 @@ static int brain_probe(struct platform_device *pdev)
+@@ -536,6 +780,7 @@ static int brain_probe(struct platform_device *pdev)
  	}
  
  	ili->pdev = pdev;
@@ -502,7 +520,7 @@ index 59c826758..2d4c5f897 100644
  	drm->dev_private = ili;
  
  	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
-@@ -558,16 +786,21 @@ static int brain_probe(struct platform_device *pdev)
+@@ -558,16 +803,21 @@ static int brain_probe(struct platform_device *pdev)
  
  	for (i = 0; i < gpiod_count(&pdev->dev, "sharp,en"); i++) {
  		en = devm_gpiod_get_index(&pdev->dev, "sharp,en", i, GPIOD_OUT_HIGH);
@@ -528,7 +546,7 @@ index 59c826758..2d4c5f897 100644
  
  	drm->mode_config.min_width = width;
  	drm->mode_config.max_width = width;
-@@ -589,6 +822,7 @@ static int brain_probe(struct platform_device *pdev)
+@@ -589,6 +839,7 @@ static int brain_probe(struct platform_device *pdev)
  		return ret;
  	}
  
@@ -536,7 +554,7 @@ index 59c826758..2d4c5f897 100644
  	drm_mode_config_reset(drm);
  
  	ret = drm_dev_register(drm, 0);
-@@ -599,6 +833,7 @@ static int brain_probe(struct platform_device *pdev)
+@@ -599,6 +850,7 @@ static int brain_probe(struct platform_device *pdev)
  
  	platform_set_drvdata(pdev, drm);
  	drm_fbdev_generic_setup(drm, 16);
@@ -544,7 +562,7 @@ index 59c826758..2d4c5f897 100644
  	return 0;
  }
  
-@@ -606,8 +841,11 @@ static int brain_remove(struct platform_device *pdev)
+@@ -606,8 +858,11 @@ static int brain_remove(struct platform_device *pdev)
  {
  	struct drm_device *drm = platform_get_drvdata(pdev);
  

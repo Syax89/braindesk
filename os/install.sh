@@ -22,6 +22,9 @@ sudo install -m 755 early/brain-zram brain-suspend /usr/local/sbin/
 sudo install -m 644 early/brain-zram.service /etc/systemd/system/ && sudo systemctl enable -q brain-zram.service
 sudo sed -i 's|^/swapfile|#/swapfile|' /etc/fstab
 sudo install -m 644 boot/brain-bootok.service /etc/systemd/system/ && sudo systemctl enable -q brain-bootok.service
+# servizi inutili per BrainDesk: brain-config (cpufreq assente, legge gli input per 1 s), getty su tty1 (lo schermo e' della shell)
+sudo systemctl mask -q brain-config.service getty@tty1.service
+sudo rm -rf /var/log/journal   # giornale solo in RAM
 sudo systemctl disable -q apt-daily.timer apt-daily-upgrade.timer man-db.timer dpkg-db-backup.timer fstrim.timer systemd-timesyncd.service 2>/dev/null || true
 sudo install -m 644 99-brain-pxp.rules /etc/udev/rules.d/
 sudo udevadm control --reload 2>/dev/null; sudo udevadm trigger --name-match=pxp 2>/dev/null || true
