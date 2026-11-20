@@ -1,6 +1,7 @@
 # inattivita' dai tempi degli eventi: attenua, spegne, primo tocco che sveglia
 # soltanto; anche mentre un'app X ha lo schermo
-ENV="BRAINSHELL_IDLE_MS=1500,3000"
+# il Terminale come app X (ripiego): serve un'app che cede lo schermo
+ENV="BRAINSHELL_IDLE_MS=1500,3000 BRAINSHELL_TERMINAL=x11"
 scene() {
 	echo "wait 2000"
 	echo "expect screen=dim"

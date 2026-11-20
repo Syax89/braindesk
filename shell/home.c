@@ -33,7 +33,7 @@ static struct {
 	/* striscia */
 	char clock[8], day[24], date[40];
 	bui_widget *w_clock, *w_date, *w_gauges, *w_np;
-	int gauge[4];		/* batteria, disco usato, memoria usata: 0..100, -1 ignoto; stato batteria */
+	int gauge[3];		/* CPU, memoria usata, disco usato: 0..100, -1 ignoto */
 	char np_title[64];
 	int np_state;
 
@@ -60,6 +60,7 @@ static struct {
 	char title[64];
 	int head_cap;		/* il tocco in corso appartiene all'intestazione */
 	int tick_timer;
+	int stats_timer;	/* CPU/RAM ogni 2 s, solo con la griglia in vista */
 	int extra;		/* riquadri finti per provare lo scorrimento */
 	char extra_label[MAX_EXTRA][24];
 
@@ -333,15 +334,16 @@ static void strip_texts(void)
 /* legge i valori degli indicatori; ritorna 1 se qualcosa e' cambiato */
 static int gauges_read(void)
 {
-	const bs_battery *b = bs_battery_get();
 	long total = 0, avail = 0;
 	long long dt = 0, df = 0;
-	int g[4] = { b->capacity, -1, -1, b->status };
+	int g[3] = { bs_sys_cpu(), -1, -1 };
 
-	if (bs_sys_storage(&dt, &df) == 0 && dt > 0)
-		g[1] = (int)(100 - df * 100 / dt);
+	if (g[0] < 0)
+		g[0] = H.gauge[0];	/* prima lettura: nessun intervallo ancora */
 	if (bs_sys_meminfo(&total, &avail) == 0 && total > 0)
-		g[2] = (int)(100 - avail * 100 / total);
+		g[1] = (int)(100 - avail * 100 / total);
+	if (bs_sys_storage(&dt, &df) == 0 && dt > 0)
+		g[2] = (int)(100 - df * 100 / dt);
 	if (!memcmp(g, H.gauge, sizeof(g)))
 		return 0;
 	memcpy(H.gauge, g, sizeof(g));
@@ -380,32 +382,22 @@ static void strip_card(bui_canvas *c, bui_rect r, int pressed)
 	}
 }
 
+static void stats_arm(void);
+
 static void draw_gauges(bui_widget *w, bui_canvas *c, bui_rect r)
 {
-	static const char *const label[3] = { "Batt.", "Disco", "RAM" };
-	const bs_battery *b = bs_battery_get();
+	static const char *const label[3] = { "CPU", "RAM", "Disco" };
 	/* la colonna dei valori deve contenere "100%" per intero */
 	int i, lw = 46, vw = bui_text_width(BUI_FONT_SMALL_B, "100%", -1) + 2;
-	int charging = b->status == BS_BAT_CHARGING || b->status == BS_BAT_FULL;
 
 	(void)w;
 	strip_card(c, r, 0);
 	for (i = 0; i < 3; i++) {
 		int y = r.y + 9 + i * 18, v = H.gauge[i];
 		bui_rect bar = bui_r(r.x + 12 + lw, y + 6, r.w - 24 - lw - vw, 6);
-		bui_px col = BUI_C_ACCENT;
+		bui_px col = v >= 90 ? BUI_C_DANGER : v >= 75 ? BUI_C_WARN : BUI_C_ACCENT;
 		char val[16];
 
-		if (i == 0 && charging && v >= 0) {
-			/* in carica o carica completa: un fulmine fra la barra e il valore */
-			bar.w -= 16;
-			bui_icon_draw(c, BUI_IC(bolt, 16), bar.x + bar.w + 1, y + 1,
-				      b->status == BS_BAT_FULL ? BUI_C_ACCENT : BUI_C_TEXT2);
-		}
-		if (i == 0 && v >= 0 && v <= 10 && b->status != BS_BAT_CHARGING)
-			col = BUI_C_DANGER;
-		else if ((i == 0 && v >= 0 && v <= 20 && b->status != BS_BAT_CHARGING) || (i > 0 && v >= 90))
-			col = BUI_C_WARN;
 		bui_text_box(c, BUI_FONT_SMALL, bui_r(r.x + 12, y, lw, 18), label[i], BUI_C_TEXT2, BUI_AL_LEFT);
 		bui_rrect(c, bar, 3, BUI_C_SURFACE3);
 		if (v > 0)
@@ -1082,7 +1074,18 @@ static void tick_stop(void)
 static void open_app(const bs_app *a, int cy)
 {
 	char msg[96];
+	const char *tx = getenv("BRAINSHELL_TERMINAL");
 
+	bs_keys_recent(a);
+	/* app con una vista e un programma (Terminale): BRAINSHELL_TERMINAL=x11
+	 * sceglie il programma, cioe' st in una sessione X come fino alla 0.3 */
+	if (a->view && a->argv && tx && !strcmp(tx, "x11")) {
+		if (bs_launch(a->argv, a->label) == 0) {
+			snprintf(msg, sizeof(msg), "Apertura di %s\xE2\x80\xA6", a->label);
+			bui_toast(msg, 1800);
+		}
+		return;
+	}
 	if (!a->view) {
 		if (!a->argv)
 			return;
@@ -1153,6 +1156,7 @@ void bs_view_close(void)
 	/* la griglia torna con ora e indicatori aggiornati */
 	strip_texts();
 	gauges_read();
+	stats_arm();
 	/* si richiude verso il riquadro dell'app, se e' in vista */
 	for (i = 0; i < H.grid.n; i++)
 		if (H.grid.w[i].type == BUI_W_TILE && H.grid.w[i].user == (void *)v->app)
@@ -1184,6 +1188,16 @@ const char *bs_home_view_id(void)
 int bs_view_is_active(const bs_view *v)
 {
 	return v && H.cur == v;
+}
+
+int bs_view_settled(const bs_view *v)
+{
+	return v && H.win && H.cur == v && !H.tr.active && H.win->mapped;
+}
+
+int bs_home_text_input(void)
+{
+	return H.cur && H.cur->text_input && H.cur->text_input(H.cur);
 }
 
 static void tick_fire(void *user)
@@ -1407,6 +1421,26 @@ void bs_home_screen_changed(void)
 		bui_win_move_resize(H.win, bui_r(0, 0, bui_screen_w(), bui_screen_h()));
 }
 
+/* CPU e RAM: ogni 2 s, ma solo con la griglia in vista e lo schermo acceso;
+ * altrimenti il timer si toglie da solo (nessun risveglio inutile) */
+static void stats_fire(void *user)
+{
+	(void)user;
+	if (H.cur || bs_screen_state() == BS_SCREEN_OFF || !H.win) {
+		bui_timer_del(H.stats_timer);
+		H.stats_timer = 0;
+		return;
+	}
+	if (gauges_read() && H.w_gauges)
+		bui_widget_damage(H.w_gauges);
+}
+
+static void stats_arm(void)
+{
+	if (!H.stats_timer && !H.cur && bs_screen_state() != BS_SCREEN_OFF)
+		H.stats_timer = bui_timer_add(2000, 2000, stats_fire, NULL);
+}
+
 /* ora, data e indicatori: si aggiornano allo scatto del minuto (nessun
  * risveglio in piu'), e solo se la griglia e' in vista e lo schermo acceso */
 static void strip_refresh(void)
@@ -1416,6 +1450,7 @@ static void strip_refresh(void)
 
 	if (!visible)
 		return;
+	stats_arm();
 	memcpy(oc, H.clock, sizeof(oc));
 	snprintf(od, sizeof(od), "%s%s", H.day, H.date);
 	strip_texts();
@@ -1455,6 +1490,9 @@ void bs_home_notify(int ev)
 void bs_home_shutdown(void)
 {
 	H.tr.active = 0;
+	if (H.stats_timer)
+		bui_timer_del(H.stats_timer);
+	H.stats_timer = 0;
 	if (H.cur) {
 		tick_stop();
 		if (H.cur->leave)
@@ -1480,6 +1518,7 @@ bui_win *bs_home_init(void)
 	if (H.extra > MAX_EXTRA)
 		H.extra = MAX_EXTRA;
 	H.gauge[0] = H.gauge[1] = H.gauge[2] = -1;
+	bs_sys_cpu();	/* punto di partenza per la prima misura */
 	order_load();
 	H.win = bui_win_create(BUI_WIN_DESKTOP, bui_r(0, 0, bui_screen_w(), bui_screen_h()),
 			       "brainshell-home");
@@ -1495,5 +1534,6 @@ bui_win *bs_home_init(void)
 	gauges_read();
 	relayout();
 	bui_win_show(H.win);
+	stats_arm();
 	return H.win;
 }

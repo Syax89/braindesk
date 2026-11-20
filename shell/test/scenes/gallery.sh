@@ -20,7 +20,8 @@ tap $((W/2)) $((H/2)) 0.4
 tap $((W-40)) $((H/2+14)) 2; shot $D-11-freccia-avanti
 tap $((W-32)) 68 0.5; shot $D-12-conferma-elimina
 key Escape; sleep 0.3
-key Delete; sleep 0.4; key Right; key Right; key Return; sleep 1.5; shot $D-13-eliminata
+# Canc (Rireki) fuori dai testi e' la schermata: si elimina dal cestino
+tap $((W-32)) 68 0.5; key Right; key Right; key Return; sleep 1.5; shot $D-13-eliminata
 key Escape; sleep 0.5; shot $D-14-ritorno-griglia
 key End; sleep 2; shot $D-15-fine
 key BackSpace; sleep 0.3; shot $D-16-home

@@ -1,6 +1,8 @@
 # app X esterne su richiesta, con un finto Xorg (test/fake-xorg):
 # cessione e ripresa dello schermo, Ctrl+Alt+Esc, uscita dell'app,
-# comando che fallisce, doppio avvio, lettore video
+# comando che fallisce, doppio avvio, lettore video. Il Terminale qui e' il
+# ripiego X (st): BRAINSHELL_TERMINAL=x11
+ENV="BRAINSHELL_TERMINAL=x11"
 scene() {
 	echo "wait 300"
 	echo "tap $TRM 100"

@@ -36,6 +36,8 @@ int bui_comp_screen_w(void);
 int bui_comp_screen_h(void);
 int bui_comp_popups(void);
 void bui_comp_redraw_all(void);	/* popup mappati (per le prove) */
+/* pixel gia' pronti nella tela della finestra: solo da ricomporre */
+void bui_comp_win_present(bui_win *w, bui_rect r);
 
 bui_win *bui_comp_win_create(int kind, bui_rect r, const char *name);
 void bui_comp_win_destroy(bui_win *w);

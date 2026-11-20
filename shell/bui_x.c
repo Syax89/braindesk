@@ -748,10 +748,18 @@ static int map_key(XKeyEvent *e, bui_key *k)
 	case XK_Home: case XK_KP_Home: k->key = BUI_K_HOME; return 1;
 	case XK_End: case XK_KP_End: k->key = BUI_K_END; return 1;
 	case XF86XK_HomePage: k->key = BUI_K_HOMEPAGE; return 1;
+	case XK_Insert: case XK_KP_Insert: k->key = BUI_K_INSERT; return 1;
 	default:
 		break;
 	}
 	if (n == 1 && (unsigned char)buf[0] >= 0x20 && (unsigned char)buf[0] != 0x7F) {
+		k->key = (unsigned char)buf[0];
+		return 1;
+	}
+	/* Ctrl+lettera: il codice di controllo (lo usa il terminale; le altre
+	 * viste ignorano i caratteri sotto 0x20) */
+	if (n == 1 && (k->mods & BUI_MOD_CTRL) && ((unsigned char)buf[0] < 0x20 || buf[0] == 0x7F) &&
+	    buf[0] != 0) {
 		k->key = (unsigned char)buf[0];
 		return 1;
 	}
@@ -908,12 +916,19 @@ static void handle_event(XEvent *e)
 		break;
 	case KeyPress:
 		X.time = e->xkey.time;
-		if (map_key(&e->xkey, &k) && w->key)
+		if (map_key(&e->xkey, &k) && !bui__key_hook(&k) && w->key)
 			w->key(w, &k);
 		break;
 	default:
 		break;
 	}
+}
+
+/* pixel gia' nella tela: come un'esposizione, si rimandano e basta */
+static void x_win_present(bui_win *w, bui_rect r)
+{
+	w->expose = w->has_expose ? bui_rect_union(w->expose, r) : r;
+	w->has_expose = 1;
 }
 
 static void x_sync(void)
@@ -989,4 +1004,5 @@ const bui_backend bui_be_x11 = {
 	.sync = x_sync,
 	.suspend = NULL,
 	.redraw_all = x_redraw_all,
+	.win_present = x_win_present,
 };

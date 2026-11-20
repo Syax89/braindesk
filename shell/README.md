@@ -3,7 +3,7 @@
 Un solo programma C (`brainshell`, ~600 kB, solo libc) che fa da interfaccia
 touch dello SHARP Brain PW-SH5. Dalla 0.3 disegna **direttamente sul pannello
 (DRM) e legge tocco e tasti da evdev, senza server X**: X parte solo quando
-serve, per una singola app esterna (Terminale, un video), e si chiude con lei
+serve, per una singola app esterna (un video, il terminale st di ripiego), e si chiude con lei
 (vedi *Senza X*). La variante `brainshell-x11` (stessi sorgenti, + libX11 e
 libXext) gira sotto X come prima, accanto a JWM: serve allo sviluppo, alle
 prove sotto Xvfb e alla sessione X di ripiego.
@@ -13,7 +13,11 @@ prove sotto Xvfb e alla sessione X di ripiego.
 - **home** (finestra *desktop*): sfondo del tema, striscia con ora, data e
   indicatori, griglia delle app riordinabile e filtrabile da tastiera;
 - **app integrate** come *viste* dentro la home: Impostazioni, Orologio,
-  Calcolatrice, Esplora (gestore di file), Galleria, Musica, Video, Note;
+  Calcolatrice, Esplora (gestore di file), Galleria, Musica, Video, Note,
+  **Terminale** (emulatore integrato su un PTY, senza X: vedi *Terminale*);
+- **tasti del dizionario** (Kokugo, Eiwa, Brain English, My Dictionary,
+  Rireki) con funzioni della shell configurabili e un selettore delle app
+  recenti (vedi *Tasti del dizionario*);
 - **sei temi**, animazioni brevi e misurate, schermo che si attenua e si
   spegne da solo; preferenze salvate in `~/.config/brainshell/config`;
 - **bui**, il piccolo toolkit su cui tutto è costruito.
@@ -46,8 +50,8 @@ cp build/armel/brainshell build/armel/brainshell-x11 ../os/
 
 # gli stessi due binari per il PC (prove) e con AddressSanitizer + UBSan
 docker run --rm -v "$PWD":/src brain-shelltest make native debug
-# prove unitarie della traduzione evdev (nessun X, nessun dispositivo)
-docker run --rm -v "$PWD":/src brain-shelltest sh -c 'make tests && build/debug/evdev_test'
+# prove unitarie: traduzione evdev, emulatore del terminale (nessun X, nessun dispositivo)
+docker run --rm -v "$PWD":/src brain-shelltest sh -c 'make tests && build/debug/evdev_test && build/debug/vt_test'
 
 # rigenerare font e icone (solo se cambi tools/bake.c): scrive gen/*.c
 docker run --rm -v "$PWD":/src brain-shelltest make bake
@@ -96,7 +100,10 @@ idle_ev.c        [drm] inattivita' dai tempi degli eventi evdev (anche durante u
 sys.c            batteria (sysfs), brain-ctl asincrono, avvio programmi, info di sistema
 view_*.c         le viste: settings, clock, calc, stub (segnaposto "in arrivo", non piu' usato
                  nella griglia: resta come esempio minimo), demo (campionario),
-                 notes (+ view_notes_edit.c), music (+ _player.c, _tags.c), video
+                 notes (+ view_notes_edit.c), music (+ _player.c, _tags.c), video,
+                 term (Terminale), keys (Impostazioni -> Tasti)
+vt.c             emulatore VT100/xterm del Terminale: solo stato e conti, provato da solo (test/vt_test.c)
+keys.c           tasti del dizionario come tasti della shell, azioni, selettore delle app recenti
 media.h          interfacce comuni a Note, Musica e Video
 media_scan.c     elenco dei file di una cartella letto da un processo figlio
 media_icons.c    icone in piu' per le tre viste (generate, fuori da gen/)
@@ -165,14 +172,20 @@ Il pannello (`bui_panel`) distingue tocco e trascinamento:
   esponenziale); un tocco durante l'inerzia la ferma e non attiva nulla.
 
 Tastiera fisica: frecce = fuoco (navigazione spaziale, anello d'accento),
-Invio/Spazio = attiva, Tab = successivo, Pag↑/Pag↓ = scorre, Esc/Backspace =
-indietro (se la vista non li usa), sinistra/destra su un cursore = regola.
+Invio/Spazio = attiva, Maiusc+Tab = precedente, Esc/Backspace = indietro (se
+la vista non li usa), sinistra/destra su un cursore = regola. Tab, Pag↑/Pag↓,
+Ins e Canc sul Brain sono i tasti del dizionario: fuori dai testi e dai popup
+fanno le azioni della shell (vedi *Tasti del dizionario*); con "Tasto
+normale" tornano Tab = successivo, Pag↑/Pag↓ = scorre, Canc = elimina.
 
 | tasto del Brain | codice | effetto |
 |---|---|---|
 | **Home** | `KEY_HOMEPAGE` (X: `XF86HomePage`) | alla griglia da ovunque: chiude la vista (con il suo `leave`: la nota si salva), pannello rapido, calendario, dialoghi e menu di spegnimento, toglie la ricerca. Schermo spento o attenuato: lo riaccende soltanto. Durante un'app X (backend drm): la chiude e torna alla shell, come Ctrl+Alt+Esc |
-| Go Back | `KEY_ESC` | indietro (Esc) |
+| Go Back | `KEY_ESC` | indietro (Esc); nel Terminale e' Esc per il programma |
 | accensione | `KEY_POWER` | vedi *Energia* |
+| Page↑ | `KEY_LEFTCTRL` | Ctrl |
+| Onsei (音声) | `KEY_LEFTALT` | Alt: accentate (vedi *Ingresso*), luminosita' e volume coi tasti del dizionario |
+| Kokugo, Eiwa, Brain English, My Dictionary, Rireki | `KEY_PAGEUP`, `KEY_PAGEDOWN`, `KEY_TAB`, `KEY_INSERT`, `KEY_DELETE` | vedi *Tasti del dizionario* |
 
 Fino al device tree precedente anche Home mandava `KEY_ESC`.
 Nella griglia una lettera porta al riquadro che inizia così; nella
@@ -226,6 +239,7 @@ alla vista il rettangolo sottostante.
 | `key(v, k)` | tasto | ritornare 1 se usato; Esc/Backspace non usati tornano alla griglia |
 | `tick(v, now_ms)` | scadenza chiesta con `bs_view_tick_in/every` | aggiornare e chiedere il ridisegno del minimo |
 | `notify(v, what)` | `BS_EV_BATTERY`, `_BRIGHTNESS`, `_VOLUME`, `_MINUTE`, `_WINDOWS`, `_PREFS`, `_THEME` (seguito da `layout()`), `_SCREEN` | aggiornare ciò che dipende dal sistema |
+| `text_input(v)` | a ogni tasto del dizionario | ritornare 1 se in quel momento la vista scrive testo (editor, campo, terminale): i tasti restano PagSu/PagGiù/Tab/Ins/Canc (vedi *Tasti del dizionario*) |
 | `leave(v)` | la vista viene nascosta | `bui_panel_clear()`, liberare; i tick sono già fermati dalla shell |
 
 Servizi per le viste: `bs_view_close()`, `bs_view_damage(rect)`,
@@ -462,6 +476,7 @@ si ignorano. Viene riscritto 0,7 s dopo l'ultima modifica, in modo atomico
 | `power_saver` | `0` `1`: risparmio energetico (vedi *Energia*) | `0` |
 | `order` | id delle app, separati da virgole, nell'ordine della griglia | ordine del registro |
 | `hidden` | id delle app nascoste | nessuna |
+| `key_kokugo` `key_eiwa` `key_english` `key_mydict` `key_history` | azione del tasto del dizionario: `standard` `none` `switcher` `quick` `screenshot` `saver` `music` `note` `app:ID` | `switcher` `quick` `music` `note` `screenshot` |
 
 Accanto, facoltativo: `wallpaper.rgb565` (vedi *Temi*).
 
@@ -730,6 +745,256 @@ rimasti. `test/edit_fuzz.c` confronta, dopo ognuno di centinaia di migliaia
 di tasti/tocchi/cambi di larghezza a caso, il testo con un modello e le
 righe ricalcolate per differenza con un ricalcolo completo.
 
+## Terminale (`view_term.c`, `vt.c`)
+
+Fino alla 0.3 il riquadro Terminale avviava X + `st` (circa 11 s sul
+Brain). Ora e' una vista integrata: si apre subito, disegna nel compositore
+come le altre viste e la sessione resta viva quando si torna alla griglia.
+
+### Processo
+
+- PTY con `posix_openpt` / `grantpt` / `unlockpt`; il figlio fa `setsid`,
+  prende il terminale di controllo (`TIOCSCTTY`), chiude tutti gli altri
+  descrittori, rimette i segnali di default ed esegue la shell di login:
+  `$SHELL` se e' un percorso eseguibile, altrimenti `/bin/bash` (o
+  `/bin/sh`), con `argv[0]` col trattino (`-bash`: legge `~/.bash_profile`).
+- `TERM=xterm-256color` se la terminfo c'e' (`ncurses-base` di Debian la
+  installa in `/usr/share/terminfo/x/`), altrimenti `xterm`;
+  `COLORTERM=truecolor`; `LANG=C.UTF-8` se manca.
+- Dimensione con `TIOCSWINSZ` a ogni layout (rotazione compresa): il kernel
+  manda `SIGWINCH` al programma in primo piano.
+- Il lato master e' non bloccante e sta nel `poll()` del toolkit
+  (`bui_fd_add`); a ogni risveglio si leggono al massimo 64 kB, poi si torna
+  al ciclo (l'interfaccia resta reattiva anche sotto `yes`).
+- Il figlio e' sorvegliato con `bs_child_watch` (SIGCHLD di `sys.c`, niente
+  zombie). A processo finito: `[processo terminato]` nel terminale, al posto
+  dei tasti della barra un pulsante **Riavvia**; anche Invio riavvia. Esc o
+  Backspace a quel punto chiudono la vista come altrove.
+- **Sessione**: uscendo dalla vista (Home, freccia, un'altra app) il PTY
+  continua a essere letto e l'emulatore aggiornato, senza disegnare;
+  rientrando si ridisegna tutto. Una sessione sola.
+
+### Emulatore (`vt.c`)
+
+Stato puro (nessun bui, nessun PTY): griglia di celle `{codice, fg, bg,
+attributi}` da 12 byte, righe come array di puntatori (uno scorrimento
+ruota puntatori), storico ad anello di 1000 righe. Copre cio' che serve a
+bash/readline, less, top, htop, nano, vim, apt:
+
+- UTF-8 (sequenze non valide → U+FFFD), caratteri larghi su due celle
+  (CJK, emoji: tabella di larghezze come glibc), combinanti ignorati;
+- movimenti (CUU/CUD/CUF/CUB/CNL/CPL/CHA/HPA/VPA/CUP...), salvataggio del
+  cursore (DECSC/DECRC, CSI s/u), modo origine, a capo automatico differito
+  (DECAWM), tabulazioni (HTS/TBC/CHT/CBT);
+- SGR: grassetto, attenuato, corsivo (annotato, non disegnato),
+  sottolineato, lampeggiante (ignorato), inverso, nascosto, barrato; 16
+  colori, 256 colori, truecolor `38;2;R;G;B` e `38:2::R:G:B` convertito in
+  RGB565;
+- cancellazioni ED/EL/ECH col colore di fondo corrente (`bce`, come vuole la
+  terminfo di xterm), ICH/DCH, IL/DL, SU/SD, REP, modo inserimento (IRM);
+- regioni di scorrimento (DECSTBM), IND/RI/NEL;
+- schermo alternativo 47/1047/1049 (con salvataggio del cursore), DECCKM
+  (frecce `ESC O A`), DECKPAM, DECSCNM (schermo inverso), DECTCEM;
+- set grafico DEC (`ESC ( 0`, SO/SI: i riquadri di ncurses), DECALN;
+- risposte: DA1 (`ESC[?62;22c`), DA2 (un VT220, cosi' vim non chiede
+  altro), DSR 5/6 (posizione del cursore);
+- OSC 0/1/2: il titolo va nell'intestazione; altri OSC, DCS, APC, PM
+  ignorati fino a ST/BEL; incolla tra parentesi (2004), mouse
+  (1000/1002/1006...), forma del cursore e operazioni sulla finestra
+  annotati o ignorati.
+
+Ogni modifica annota le colonne cambiate della riga. Gli scorrimenti
+consecutivi della stessa regione si sommano in uno solo, spostando con le
+righe anche i segni di "cambiata": chi disegna sposta i pixel una volta per
+fotogramma e ridisegna solo le righe nuove (`sc_top`, `sc_bot`, `sc_n`).
+
+### Disegno
+
+- **Font**: DejaVu Sans Mono 13 px, normale e grassetto (`BUI_FONT_MONO` e
+  `BUI_FONT_MONO_B`, 524 glifi l'uno: ASCII, Latin-1, Latin Extended-A,
+  greco, punteggiatura, frecce, simboli matematici e geometrici; +85 kB),
+  in **celle da 8×16 px**: **106×24** in orizzontale (sotto barra e
+  intestazione), **60×44** in verticale. A 13 px l'avanzamento di DejaVu Mono
+  e' 7,8 px: le celle da 8 restano allineate senza spazi. Le maiuscole
+  accentate (13 px sopra la linea di base) scendono di un pixel per entrare
+  nella cella.
+- **Linee dei riquadri** (U+2500–257F: sottili, spesse, doppie, archi,
+  diagonali), **blocchi** (U+2580–259F, ombreggiature comprese), **braille**
+  (U+2800–28FF, i grafici di htop/btop) e le linee di scansione del set DEC
+  sono disegnati a misura di cella: si uniscono senza buchi fra le righe.
+  Un carattere senza glifo e' un rettangolo; un carattere largo un
+  rettangolo su due celle.
+- **Colori** dal tema: fondo `BUI_C_BG`, testo `BUI_C_TEXT`, cursore a
+  blocco nel colore d'accento; i 16 colori ANSI hanno una tavolozza per i
+  temi scuri e una per quelli chiari (Chiaro); 256 colori e truecolor come
+  xterm. Grassetto sui colori 0–7 = la versione chiara (come xterm).
+- **Solo le celle cambiate**: l'uscita del programma si accumula e si
+  disegna al massimo ~30 volte al secondo (`RENDER_MS` 33). Le celle
+  cambiate vengono disegnate **direttamente nella tela** e inviate con
+  `bui_win_present()` (nuovo nel toolkit: invia un rettangolo senza
+  ridisegnarlo); uno scorrimento sposta le righe della tela con `memmove`
+  e ne invia la fascia, poi si disegnano solo le righe nuove. Se la tela
+  non e' "nostra" (transizione in corso, un rettangolo della finestra in
+  attesa di ridisegno) si ripiega sul percorso normale `bs_view_damage` →
+  `draw()`, che ridisegna dalle celle. Il cursore non lampeggia (nessun
+  risveglio a terminale fermo).
+- Numeri (backend mem, 854×480): una riga scritta = una fascia da 16 righe
+  di pannello; 120 righe di uscita in un colpo = un fotogramma con uno
+  spostamento della regione e le righe nuove.
+
+### Storico
+
+1000 righe (le righe che escono dalla cima dello schermo principale; lo
+schermo alternativo non ne aggiunge). Trascinamento col dito con inerzia,
+rotellina, **Maiusc+PagSu/PagGiù** una pagina; mentre si guarda lo storico
+la vista resta ferma sulle stesse righe anche se il programma scrive, e un
+indicatore in basso a destra dice quante righe mancano ("storico −42"). **Un
+tasto qualsiasi torna in fondo** (e arriva al programma). Nello schermo
+alternativo (less, man, vim) il trascinamento manda invece frecce su/giù al
+programma.
+
+### Tastiera e barra dei tasti
+
+| tasto | al programma |
+|---|---|
+| lettere, cifre, simboli | il carattere (UTF-8); le accentate con Onsei come altrove (à è é ì ò ù ç € °) |
+| Page↑ (Ctrl) + lettera | il codice di controllo (Ctrl+C, Ctrl+D, Ctrl+Z, Ctrl+[ ...): `bui_evdev.c` ora li consegna (prima Ctrl+lettera non produceva nulla) |
+| Onsei + lettera senza accentata | `ESC` + lettera (Meta) |
+| frecce | `ESC [ A` o, in modo applicazione (DECCKM), `ESC O A`; con modificatori `ESC [ 1 ; m A` |
+| Invio, Backspace, Tab, Maiusc+Tab | `CR`, `DEL` (0x7F, come la terminfo), `TAB`, `ESC [ Z` |
+| **Go Back** (Esc) | `ESC` al programma: nel terminale **non** chiude la vista |
+| Kokugo/Eiwa/Brain English/My Dictionary/Rireki | PagSu, PagGiù, Tab, Ins, Canc (`ESC [5~`, `ESC [6~`, `TAB`, `ESC [2~`, `ESC [3~`) |
+| Maiusc + Kokugo/Eiwa | storico (non vanno al programma) |
+| **Home** | alla griglia (la sessione resta) |
+
+Per uscire dalla vista: **Home** o la **freccia** dell'intestazione (Esc va
+al programma). La **barra dei tasti** a tocco (nell'intestazione in
+orizzontale, su una riga sua in verticale) ha `Esc Tab Ctrl ↑ ↓ ← → | ~ / -`:
+**Ctrl resta premuto** (evidenziato) e vale per il tasto successivo, dalla
+barra o dalla tastiera. Niente selezione ne' appunti.
+
+Una **pressione lunga** (0,8 s) sul testo chiede "Aprire in X?" e avvia `st`
+in una sessione X come prima della 0.4 (il ripiego; `BRAINSHELL_TERMINAL=x11`
+fa aprire direttamente st dal riquadro).
+
+### Energia
+
+Il terminale **non impedisce** attenuazione, spegnimento dello schermo e
+sospensione automatica, **tranne** quando un programma ha scritto negli
+ultimi 30 s: un comando in primo piano (il gruppo in primo piano del PTY,
+`tcgetpgrp`, non e' la shell) oppure un'uscita che non e' l'eco di un tasto
+premuto da meno di un secondo. Cosi' `apt upgrade`, `make` o un `ping` che
+scrive tengono sveglio il Brain finche' lavorano, mentre la shell ferma al
+prompt (o un `sleep`, o un editor in attesa) lo lascia dormire.
+`bs_power_can_autosleep()` lo chiede a `bs_term_keep_awake()`; quando non si
+puo' sospendere si ricontrolla ogni 30 s come per la musica. In sospensione
+anche i programmi del terminale si fermano (e riprendono al risveglio).
+
+### Prove
+
+- `test/vt_test.c` (`make tests`): 162 controlli. Flussi di byte registrati
+  (`test/vt/*.raw`, rifatti con `test/vt/record.sh` in un contenitore con
+  tmux, vim-tiny, nano, less, htop) di bash con prompt colorato, `ls
+  --color`, readline che va a capo e inserisce, `top`, `htop`, la schermata
+  iniziale di vim, vim che scorre (Ctrl-E/Ctrl-Y) e inserisce una riga,
+  nano, less, la riga di avanzamento di apt (regione di scorrimento),
+  frammenti alla vttest (DECALN, margini, IRM, ICH/DCH/ECH, IL/DL, set
+  grafico, caratteri larghi tagliati, schermo alternativo, truecolor,
+  barrato): testo di ogni riga e cursore uguali a quelli di tmux
+  (l'emulatore di riferimento, `test/vt/*.txt`). Poi gli stessi flussi
+  spezzati a caso in pezzi da 1–300 byte: dopo ogni pezzo una tela finta
+  aggiornata solo dalle celle segnate (e dagli scorrimenti in attesa) deve
+  coincidere con la griglia. Piu' sequenze a mano: colori e attributi,
+  `bce`, regioni, IL/DL, ICH/DCH/ECH, DECOM, schermo alternativo, risposte
+  DA/DSR, titolo con BEL e con ST, UTF-8 non valido, caratteri larghi,
+  DEC grafico, SO/SI, REP, ridimensionamento con lo storico, e i byte dei
+  tasti (frecce normali/DECCKM, Ctrl, Alt, Canc, Maiusc+PagSu...).
+- Scena mem `term` (un vero `/bin/sh` nel contenitore,
+  `BRAINSHELL_TERM_SHELL`): comandi scritti dalla tastiera evdev che creano
+  file, colori, accentate in UTF-8 sullo schermo, 120 righe e storico
+  trascinato, Ctrl+C dal tasto Ctrl e dal Ctrl della barra, Esc che resta
+  nel terminale, tasti del dizionario che restano tasti, sospensione
+  trattenuta da un programma che scrive e poi liberata
+  (`BRAINSHELL_TERM_AWAKE_MS`), Home e ritorno con la sessione viva,
+  freccia, `exit` → "[processo terminato]" → Invio → shell nuova.
+  `BRAINSHELL_TERM_DUMP` scrive il testo dello schermo per i controlli.
+- Scena mem `termdraw`: i flussi registrati (htop, vim, apt, vttest, less)
+  e 300 righe di seguito mandati al terminale con `cat`; lo schermo
+  disegnato per differenza (celle nella tela, righe spostate con memmove)
+  deve essere identico, pixel per pixel, a quello ridisegnato da zero dopo
+  Home e rientro.
+- Entrambe in orizzontale e in verticale, con ASan+UBSan (`test/mem.sh -d`)
+  e col binario ARM sotto `qemu-arm -cpu arm926` (`test/mem.sh -q`).
+
+### Da verificare sul Brain
+
+Leggibilita' delle celle 8×16 sul pannello da 5" (alternativa: un font da
+12 px in celle 7×14 = 122×27), velocita' con un fiume di uscita (`yes`,
+`find /`) e durante lo scorrimento dello storico (ridisegno di tutto il
+testo, ~25 fotogrammi al secondo stimati), htop e vim veri, `apt` con la
+barra in fondo, il tasto Page↑ come Ctrl, Onsei come Alt/Meta, la
+sospensione automatica durante un `apt upgrade`.
+
+## Tasti del dizionario (`keys.c`, `view_keys.c`)
+
+Il device tree del PW-SH5 manda i tasti del dizionario come tasti normali.
+La shell li riconosce e, **fuori dai testi**, fa con loro un'azione
+scelta in **Impostazioni → Tasti** (una pagina per tasto: tasto normale,
+nessuna azione, app recenti, impostazioni rapide, schermata, risparmio
+energetico sì/no, Musica riproduci/pausa, Note, apri un'app a scelta; e la
+pagina **Guida ai tasti**).
+
+| tasto | codice | predefinito | con Onsei (Alt) |
+|---|---|---|---|
+| **Kokugo** (国語) | `KEY_PAGEUP` | **App recenti**: ogni pressione passa alla successiva; Invio, un tocco, oppure lasciarlo dopo averlo tenuto (≥ 0,45 s) apre la scelta; Esc annulla | luminosità −10 |
+| **Eiwa · Waei** (英和・和英) | `KEY_PAGEDOWN` | **Impostazioni rapide** (di nuovo: le chiude) | luminosità +10 |
+| **Brain English** | `KEY_TAB` | **Musica**: pausa/ripresa del brano caricato; senza brano apre Musica | audio disattivato / di nuovo al volume di prima |
+| **My Dictionary** (マイ辞書) | `KEY_INSERT` | **Note**; tenuto 0,5 s: **nota nuova** | volume −10 |
+| **Rireki** (履歴) | `KEY_DELETE` | **Schermata** (`brain-ctl screenshot`, con l'avviso "Schermata salvata") | volume +10 |
+| Page↑ (ページ↑) | `KEY_LEFTCTRL` | Ctrl | — |
+| Onsei (音声) | `KEY_LEFTALT` | Alt (accentate) | — |
+| Home | `KEY_HOMEPAGE` | alla griglia (vedi *Tocco e tastiera*) | — |
+| Go Back (戻る) | `KEY_ESC` | Esc / indietro | — |
+
+Regole:
+
+- **Testi**: nel Terminale, nell'editor delle Note e nel campo di rinomina
+  di Esplora (la vista lo dice con il nuovo callback `text_input`) i cinque
+  tasti restano PagSu, PagGiù, Tab, Ins e Canc. Anche **nei popup**
+  (dialoghi, impostazioni rapide, calendario, menu di spegnimento): Tab
+  sposta il fuoco, PagSu/PagGiù cambiano mese; solo il tasto delle
+  impostazioni rapide le richiude.
+- **Maiusc o Ctrl** + tasto: sempre il tasto normale (Maiusc+Tab, Ctrl+PagSu).
+- **Onsei** + tasto: luminosità e volume **ovunque**, anche nel Terminale
+  (con un avviso "Luminosità 60%"). Tenuto premuto si ripete.
+- **Pressione lunga**: evdev manda anche il rilascio di questi cinque tasti
+  (`BUI_K_RELEASED`, solo all'aggancio della shell, mai alle finestre). La
+  ripetizione resta (PagGiù o Canc tenuti nei testi) ma fuori dai testi
+  conta solo la prima pressione. Sotto X (`brainshell-x11`) il rilascio non
+  arriva: My Dictionary apre sempre Note e il selettore si chiude con Invio.
+- **App recenti**: le app aperte, dalla più recente (al massimo 8; le
+  esterne comprese). Dalla griglia la prima pressione sceglie la più
+  recente, da una vista quella prima (come Alt+Tab). Sotto ogni app:
+  "aperta", "sessione attiva" (Terminale), "in riproduzione" (Musica).
+  È un popup modale grande quanto lo schermo col fondo scurito.
+- Le scelte sono salvate come `key_kokugo`, `key_eiwa`, `key_english`,
+  `key_mydict`, `key_history` (vedi *Preferenze*); un valore sconosciuto
+  vale il predefinito. "Scelte iniziali" nella pagina Tasti le ripristina.
+
+Prove: `test/evdev_test.c` (pressione, ripetizione e rilascio dei cinque
+tasti, con Onsei, Ins, Ctrl+lettera → codici di controllo, Ctrl+Spazio che
+non arriva) e la scena mem `dictkeys` (selettore con pressioni ripetute,
+Invio, tenuto e rilasciato; impostazioni rapide aperte e chiuse; schermata;
+Musica; Note e nota nuova col tasto tenuto, con Tab/Canc/PagSu che restano
+tasti nell'editor; Onsei per luminosità, volume e muto; Maiusc+Tab e
+Ctrl+PagSu normali; in orizzontale Impostazioni → Tasti → Rireki → "Apri
+un'app" → Calcolatrice, salvato nel file, poi Rireki che apre la
+Calcolatrice).
+
+Da verificare sul Brain: che il device tree mandi davvero quei codici (e il
+rilascio), la pressione lunga di My Dictionary e di Kokugo con le dita, e
+che Onsei+tasto non dia fastidio scrivendo le accentate.
+
 ## Il toolkit bui in breve
 
 **Colori** (`BUI_C_*`): `BG`, `BAR`, `SURFACE`, `SURFACE2`, `SURFACE3`, `LINE`,
@@ -757,6 +1022,7 @@ allineata, troncata con "…"), `bui_text_wrap` (a capo automatico; con tela
 | `BUI_FONT_KEY` | Sans 26 px | `0-9 . , : + - = % ( ) / * A C E e ± × ÷ − √` |
 | `BUI_FONT_NUM` | Sans 44 px | `0-9 . , : + - = % ( ) E e × ÷ − …` |
 | `BUI_FONT_HUGE` | Sans 88 px | `0-9 : . , -` |
+| `BUI_FONT_MONO` / `_MONO_B` | DejaVu Sans Mono / Bold 13 px (terminale, celle 8×16) | ASCII, Latin-1, Latin Extended-A, greco, punteggiatura, frecce, simboli matematici e geometrici comuni (524 glifi) |
 
 Le dimensioni non sono casuali: a 15, 18, 22, 26, 44 e 88 px l'altezza delle
 maiuscole e della x di DejaVu cade quasi su pixel interi, quindi il testo
@@ -785,6 +1051,16 @@ flag `HIDDEN DISABLED SELECTED NOFOCUS DIVIDER DIM`.
 
 **Ciclo**: `bui_timer_add/del`, `bui_anim_add/del` (un passo per fotogramma
 finché ritorna ≠ 0), `bui_fd_add/del`, `bui_now()`.
+
+**Nuovi nella 0.4**: `bui_win_present(win, r)` invia un rettangolo della tela
+senza ridisegnarlo (pixel scritti fuori da `paint`, come le righe del
+terminale spostate con `memmove`; x11: come un'esposizione, drm/mem: solo
+ricomposizione); `bui_set_key_hook(f)`: un aggancio chiamato per ogni tasto
+dopo i filtri e prima della finestra (lo usa `keys.c`); `BUI_K_INSERT`;
+`BUI_K_RELEASED` (rilascio dei tasti del dizionario, solo all'aggancio);
+Ctrl+carattere consegnato come codice di controllo (0x01–0x1F, 0x7F) con
+`BUI_MOD_CTRL`, sia da evdev sia da X (le viste che scrivono ignorano già i
+caratteri sotto 0x20); fino a 6 filtri d'ingresso.
 
 `brainshell --open demo` mostra tutto il campionario.
 
@@ -845,6 +1121,10 @@ Variabili d'ambiente:
 | `BRAINSHELL_EVDEV` | dispositivi di ingresso separati da virgole, al posto della ricerca per nome |
 | `BRAINSHELL_TOUCH_CAL`, `BRAINSHELL_ROTATION` | al posto di `99-calibrator.conf` e `/etc/brain-rotation` |
 | `BRAINSHELL_ST_CELL` | cella di st in px (default `8x16`) per la griglia a tutto schermo |
+| `BRAINSHELL_TERMINAL=x11` | il riquadro Terminale apre st in una sessione X (come fino alla 0.3) invece della vista integrata |
+| `BRAINSHELL_TERM_SHELL` | programma della vista Terminale al posto di `$SHELL` (prove: `/bin/sh`) |
+| `BRAINSHELL_TERM_DUMP` | file in cui il Terminale scrive il testo dello schermo a ogni fotogramma (prove) |
+| `BRAINSHELL_TERM_AWAKE_MS` | al posto dei 30 s di uscita che trattengono la sospensione (prove) |
 | `BRAINSHELL_SCRIPT`, `BRAINSHELL_MEM_SIZE`, `BRAINSHELL_SHOTS`, `BUI_MEM_STATE` | backend mem (vedi `bui_mem.c`) |
 
 Le preferenze sono descritte in *Preferenze*.
@@ -899,7 +1179,7 @@ Misurate sul PC di sviluppo (aarch64, Xvfb + JWM) — vedi la scena `perf`:
 
 | | misurato | atteso sul Brain |
 |---|---|---|
-| binario armel senza simboli | 541 kB (0.1: 335 kB). Temi, animazioni, home, inattività: +43 kB; Esplora, Galleria e decodificatori ~130 kB; Note, Musica, Video ~35 kB | — |
+| binario armel senza simboli | 541 kB (0.1: 335 kB). Temi, animazioni, home, inattività: +43 kB; Esplora, Galleria e decodificatori ~130 kB; Note, Musica, Video ~35 kB; 0.4: 749 kB col Terminale (vedi *Senza X* → *Misure*) | — |
 | da `main()` al primo fotogramma completo | 12–19 ms; 10,4 M di istruzioni (callgrind; 0.1: 10,5 M), tre quarti per lo sfondo. Tema con vetro (Aurora): un secondo passaggio dello sfondo, ~+7 M | 150–250 ms: ~60 ms di CPU nostra, il resto caricamento delle librerie e lavoro del server X |
 | CPU a riposo | 1 tick di CPU in 65 s; 7 risvegli: minuto (barra + ora della home) e batteria. Nessun timer delle animazioni o dell'inattività | lo stesso |
 | RSS | 4,1 MB come nella 0.1 (1,1 anonima, 0,9 tele condivise, 2,1 codice e librerie mappati); +0,8 MB col vetro | simile |
@@ -935,6 +1215,11 @@ con `BRAINSHELL_TIMING=1` e `BUI_TRACE=1`.
 - Nel modo modifica i riquadri non scivolano al nuovo posto (saltano); i
   riquadri finti di prova non si riordinano.
 - La ricerca guarda solo l'inizio delle parole e solo lettere ASCII e cifre.
+- Terminale: una sola sessione; niente selezione, appunti, incolla, mouse
+  (le richieste dei programmi sono ignorate), corsivo e lampeggio; i
+  caratteri combinanti sono ignorati e quelli senza glifo (CJK, emoji) sono
+  rettangoli; cambiando dimensione le righe non si riavvolgono (si
+  troncano); Ctrl+Spazio (NUL) solo col Ctrl della barra.
 - Le miniature della Galleria già in cache tengono, sotto le parti
   trasparenti, il colore del tema con cui sono state create.
 - Lo spegnimento vero dello schermo aspetta il verbo `screen` in `brain-ctl`
@@ -1013,8 +1298,13 @@ Cosa faceva X e chi lo fa ora:
   morta di 2 px, di una raffica si invia solo l'ultimo movimento, il
   rilascio avviene nell'ultimo punto inviato. `SYN_DROPPED` gestito.
 - **Tastiera**: mappa US con Shift e Bloc Maiusc; con Ctrl i tasti di
-  carattere non producono testo (come `XLookupString`); la ripetizione del
-  kernel è ignorata e la shell ripete da sé (500 ms, poi 25/s).
+  carattere non producono testo ma il codice di controllo (come
+  `XLookupString`: Ctrl+C = 0x03, Ctrl+[ = ESC; Ctrl+Spazio, cioè NUL, non
+  arriva), che le viste di testo ignorano e il Terminale manda al programma;
+  la ripetizione del kernel è ignorata e la shell ripete da sé (500 ms, poi
+  25/s). Dei cinque tasti del dizionario (PagSu, PagGiù, Tab, Ins, Canc)
+  arriva anche il rilascio, `BUI_K_RELEASED`, che vede solo l'aggancio dei
+  tasti della shell (`keys.c`).
 - **Accentate senza tasti morti, AltGr o composizione**: Alt + tasto (sul
   Brain Alt è il tasto *Onsei*; le cifre si ottengono col tasto *Simboli*).
   Con Shift la maiuscola. Il carattere arriva senza il modificatore Alt,
@@ -1031,8 +1321,10 @@ Cosa faceva X e chi lo fa ora:
 
 ### App X esterne su richiesta (`xapp.c`)
 
-Un riquadro con un programma esterno (Terminale), un video dalla vista Video
-o da Esplora: `bs_launch()` passa a `bs_xapp_launch()`. Una sola app alla
+Un riquadro con un programma esterno, un video dalla vista Video o da
+Esplora, il terminale st di ripiego (pressione lunga nel Terminale → "Apri in
+X", oppure `BRAINSHELL_TERMINAL=x11`): `bs_launch()` passa a
+`bs_xapp_launch()`. Una sola app alla
 volta, a tutto schermo:
 
 1. `STARTING`: sale il toast "Apertura di …"; dopo 250 ms
@@ -1139,9 +1431,11 @@ Dopo il riavvio: `cat /tmp/brain-ui.log` (orari di `brain-shell-session`,
 "primo fotogramma dopo N ms", eventuali errori di brainshell),
 `/tmp/brain-xapp.log` per le sessioni X. Prove a mano: tocco ovunque
 (calibrazione, anche nei due verticali), scorrimento, tastiera (accentate
-con Onsei), Terminale → `exit` → di nuovo la shell, Terminale →
-Ctrl+Alt+Esc, un video, attenuazione/spegnimento (anche dentro il
-terminale), schermata dal pannello rapido.
+con Onsei), Terminale integrato (vedi *Terminale* → *Da verificare sul
+Brain*), il ripiego X (pressione lunga nel Terminale → Apri in X → `exit` →
+di nuovo la shell; ancora → Ctrl+Alt+Esc), un video,
+attenuazione/spegnimento (anche dentro un'app X), schermata dal pannello
+rapido, i tasti del dizionario.
 
 Per provare senza riavviare (da SSH, con la sessione X attuale ferma):
 `sudo touch /run/brain-nodesktop; sudo pkill xinit` poi
@@ -1172,12 +1466,22 @@ perché). Senza nessuna interfaccia: `/etc/brain-noearlyui` come prima.
 | `keys` | ricerca nella griglia, calcolatrice da tastiera, frecce con ripetizione, nota scritta con accentate e salvata in UTF-8 |
 | `xapp` | finto Xorg (`test/fake-xorg`): X parte sempre a schermo già ceduto, tocchi ignorati durante l'app, Ctrl+Alt+Esc → SIGTERM → ritorno, app che esce da sola, comando che fallisce (toast), doppio avvio rifiutato, video da Video, geometria di st |
 | `idle` | attenuazione, spegnimento, primo tocco che sveglia soltanto, spegnimento e risveglio durante un'app X |
+| `term` | Terminale con un vero `/bin/sh`: comandi, colori, UTF-8, storico, Ctrl+C (tasto e barra), Esc, tasti del dizionario che restano tasti, sospensione trattenuta, Home e ritorno, `exit` e Riavvia (vedi *Terminale*) |
+| `termdraw` | disegno per differenza del Terminale identico al ridisegno completo con htop, vim, apt, vttest, less e 300 righe |
+| `dictkeys` | tasti del dizionario: app recenti, impostazioni rapide, schermata, Musica, Note e nota nuova, Onsei per luminosità e volume, Impostazioni → Tasti (vedi *Tasti del dizionario*) |
+
+`xapp`, `idle`, `autosleep` e `homekey` (e le scene x11) usano `BRAINSHELL_TERMINAL=x11`:
+il riquadro Terminale vi fa da app X esterna, come prima della 0.4.
 
 - **`test/evdev_test.c`** (`make tests`): flussi di `struct input_event`
   come li manda il kernel: angoli e centro nelle tre rotazioni, valori fuori
   calibrazione, rumore entro la zona morta, spike a metà trascinamento,
   raffiche, `SYN_DROPPED`, BTN_LEFT; tutta la mappa ASCII e le accentate,
-  Shift/Bloc Maiusc/Ctrl/Alt, ripetizione (500 ms, 25/s, niente raffiche).
+  Shift/Bloc Maiusc/Ctrl/Alt, Ctrl+lettera → codici di controllo,
+  ripetizione (500 ms, 25/s, niente raffiche); i tasti del dizionario
+  (pressione, ripetizione, rilascio, con Onsei), Ins.
+- **`test/vt_test.c`** (`make tests`): l'emulatore del terminale, vedi
+  *Terminale* → *Prove*.
 - `test/mem.sh -q`: il binario armel sotto `qemu-arm -cpu arm926`.
 - `test/cg-mem.sh` (immagine con valgrind): istruzioni da `main()` al primo
   fotogramma, mem contro x11.
@@ -1188,7 +1492,7 @@ perché). Senza nessuna interfaccia: `/etc/brain-noearlyui` come prima.
 
 | | mem/drm | x11 |
 |---|---|---|
-| binario armel senza simboli | 610 480 byte (testo 522 kB), NEEDED `libc.so.6` | 610 744 byte (testo 542 kB), NEEDED `libX11.so.6 libXext.so.6 libc.so.6` |
+| binario armel senza simboli | 749 440 byte (testo 667 kB; 0.3: 610 480 / 522 kB: Terminale ~36 kB di codice + 85 kB di font mono, tasti ~11 kB), NEEDED `libc.so.6` | 749 712 byte (testo 688 kB), NEEDED `libX11.so.6 libXext.so.6 libc.so.6` |
 | `main()` → primo fotogramma (callgrind, 854×480) | 10,09 M istruzioni | 10,41 M (+ il lavoro del server X) |
 | idem 480×854 | 10,39 M | 10,70 M |
 | RSS a riposo dopo home/Impostazioni (backend mem) | 4,6 MB (2,8 anonima: tele 0,8 MB + superficie 0,8 MB, che sul Brain è il dumb buffer) | 4,1 MB + Xorg 12 MB + JWM 13 MB sul Brain |
@@ -1258,8 +1562,10 @@ della barra) scattano subito al risveglio.
 Impostazioni → Schermo → **Sospendi dopo** (Mai / 1 / 5 / 15 / 30 min,
 default 5; `sleep_after=` in secondi). Si conta da quando lo schermo si è
 spento, oppure dall'ultimo tocco se lo spegnimento è "Mai". Solo a batteria
-e mai con la musica che suona, un'app X aperta o il menu aperto: finché non
-si può si ricontrolla ogni 30 s (es. il cavo staccato a schermo già spento).
+e mai con la musica che suona, un'app X aperta, il menu aperto o un
+programma del Terminale che ha scritto negli ultimi 30 s (vedi *Terminale* →
+*Energia*): finché non si può si ricontrolla ogni 30 s (es. il cavo staccato
+a schermo già spento).
 
 ### Batteria
 

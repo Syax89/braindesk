@@ -71,10 +71,12 @@ static void state_query(char *buf, int len)
 {
 	int s = bs_screen_state(), x = bs_xapp_state();
 
-	snprintf(buf, (size_t)len, "view=%s dialog=%d screen=%s xapp=%s power=%s saver=%d", bs_home_view_id(),
+	snprintf(buf, (size_t)len, "view=%s dialog=%d screen=%s xapp=%s power=%s saver=%d term=%s switcher=%d "
+		 "quick=%d awake=%d", bs_home_view_id(),
 		 bui_dialog_active(), s >= 0 && s <= 2 ? screen_names[s] : "?",
 		 x >= 0 && x <= 3 ? xapp_names[x] : "?",
-		 bs_power_sleeping() ? "sleeping" : bs_power_menu_open() ? "menu" : "idle", bs_pref.saver);
+		 bs_power_sleeping() ? "sleeping" : bs_power_menu_open() ? "menu" : "idle", bs_pref.saver,
+		 bs_term_state(), bs_switcher_is_open(), bs_bar_quick_open(), bs_term_keep_awake());
 }
 
 /*
@@ -136,6 +138,7 @@ int main(int argc, char **argv)
 	bs_prefs_apply();
 	bs_sys_init();
 	bs_power_init();	/* prima di idle: il suo filtro vede per primo il tasto */
+	bs_keys_init();		/* tasti del dizionario */
 	bs_wm_init();
 	home = bs_home_init();
 	bar = bs_bar_init();

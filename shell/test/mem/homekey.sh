@@ -1,7 +1,8 @@
 # tasto Home (KEY_HOMEPAGE): alla griglia da una vista (la nota si salva),
 # dal pannello rapido e da un dialogo, dalla ricerca; a schermo spento
 # sveglia soltanto; durante un'app X la chiude
-ENV="BRAINSHELL_IDLE_MS=0,2500,0"
+# il Terminale come app X (ripiego st), per la parte "durante un'app X"
+ENV="BRAINSHELL_IDLE_MS=0,2500,0 BRAINSHELL_TERMINAL=x11"
 scene() {
 	echo "wait 300"
 	echo "tap $SET 900"

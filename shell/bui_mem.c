@@ -662,4 +662,5 @@ const bui_backend bui_be_mem = {
 	.flush = m_flush,
 	.suspend = m_suspend,
 	.redraw_all = bui_comp_redraw_all,
+	.win_present = bui_comp_win_present,
 };

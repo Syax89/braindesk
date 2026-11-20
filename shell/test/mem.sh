@@ -22,7 +22,7 @@ while [ "${1#-}" != "$1" ]; do
 	shift
 done
 geom=${1:-854x480}; shift
-scenes=${*:-home views quick scroll dialog keys xapp idle power autosleep battery homekey}
+scenes=${*:-home views quick scroll dialog keys xapp idle power autosleep battery homekey term termdraw dictkeys}
 docker image inspect brain-shelltest > /dev/null 2>&1 || docker build -t brain-shelltest test
 exec docker run --rm -e B=$B -e TARGET=$target -e WRAP="$wrap" -e GEOM=$geom -e SCENES="$scenes" -e VERBOSE \
 	-v "$PWD":/src brain-shelltest test/mem-run.sh

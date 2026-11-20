@@ -47,6 +47,8 @@ typedef struct bui_backend {
 	int (*suspend)(int on);
 	/* tutte le finestre da ridisegnare e reinviare */
 	void (*redraw_all)(void);
+	/* invia un rettangolo della tela senza ridisegnarlo */
+	void (*win_present)(bui_win *w, bui_rect r);
 } bui_backend;
 
 extern const bui_backend bui_be_x11, bui_be_drm, bui_be_mem;
@@ -55,6 +57,8 @@ extern const bui_backend bui_be_x11, bui_be_drm, bui_be_mem;
 
 /* filtri d'ingresso: ritorna 1 se l'evento va scartato */
 int bui__input_filter(int kind, const bui_key *k, int suspended);
+/* aggancio dei tasti della shell: 1 se il tasto e' stato usato */
+int bui__key_hook(const bui_key *k);
 /* chi ha chiuso un popup lo annota (bui_popup_last_close) */
 void bui__popup_closed_now(void);
 /* scurisce un'immagine a 3/8 della luminosita', con dithering */

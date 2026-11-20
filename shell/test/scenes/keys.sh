@@ -15,6 +15,7 @@ key Up; key Return; shot $D-10-rotate-dialog
 key Right; key Right; shot $D-11-dialog-focus
 key Escape; shot $D-12-dialog-cancelled
 key BackSpace; shot $D-13-home
-key o; key Return; key Tab; key Right; key Return; shot $D-14-clock-tab-by-keys
+# Tab (Brain English) fuori dai testi e' un tasto della shell: le schede con le cifre
+key o; key Return; key 2; shot $D-14-clock-tab-by-keys
 key space; sleep 1.2; key space; shot $D-15-stopwatch-space
 cat $BRAIN_CTL_STATE/log

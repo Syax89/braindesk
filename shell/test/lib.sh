@@ -68,6 +68,9 @@ start_x() {	# start_x 854x480
 	printf '#!/bin/sh\nexec xclock -name xfe -title "Gestore file"\n' > /tmp/bin/xfe
 	chmod +x /tmp/bin/st /tmp/bin/xfe
 	PATH=/tmp/bin:$PATH
+	# le scene x11 provano il Terminale come app esterna (st): il ripiego X
+	# della vista integrata, che ha le sue scene nel backend mem (test/mem/term.sh)
+	export BRAINSHELL_TERMINAL=${BRAINSHELL_TERMINAL-x11}
 	Xvfb :99 -screen 0 ${GEOM}x16 -nolisten tcp > /tmp/xvfb.log 2>&1 &
 	export DISPLAY=:99
 	for i in $(seq 50); do xdpyinfo > /dev/null 2>&1 && break; sleep 0.1; done

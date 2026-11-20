@@ -142,7 +142,7 @@ int bs_power_can_autosleep(void)
 	const bs_battery *b = bs_battery_get();
 
 	return !P.sleeping && !P.menu && b->usb != 1 && mp_get()->state != MP_PLAYING &&
-	       bs_xapp_state() == BS_XAPP_IDLE && !bui_is_suspended();
+	       bs_xapp_state() == BS_XAPP_IDLE && !bui_is_suspended() && !bs_term_keep_awake();
 }
 
 /* ------------------------------------------------------------------ */
@@ -301,6 +301,7 @@ static void long_fire(void *user)
 static void go_home(void)
 {
 	menu_close();
+	bs_switcher_close();
 	bui_dialog_close();	/* il dialogo annullato: chi l'ha aperto lo sa */
 	bs_bar_close_popups();
 	bs_home_go_grid();	/* chiude la vista (leave: le note si salvano), toglie la ricerca */

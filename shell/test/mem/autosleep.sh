@@ -1,6 +1,7 @@
 # sospensione automatica: dopo lo spegnimento dello schermo, solo a batteria,
 # mai con la musica che suona, un'app X aperta o il cavo collegato
-ENV="BRAINSHELL_IDLE_MS=0,1500,1500 BRAINSHELL_BATTERY_MS=300"
+# il Terminale come app X (ripiego st): "un'app X aperta" impedisce la sospensione
+ENV="BRAINSHELL_IDLE_MS=0,1500,1500 BRAINSHELL_BATTERY_MS=300 BRAINSHELL_TERMINAL=x11"
 B=$BRAIN_SYSROOT/sys/class/power_supply
 scene() {
 	echo "wait 300"

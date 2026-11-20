@@ -61,6 +61,12 @@ void bui_comp_damage_screen(bui_rect r)
 	bui_win_damage(&K.scr, r);
 }
 
+void bui_comp_win_present(bui_win *w, bui_rect r)
+{
+	if (w->mapped)
+		bui_comp_damage_screen(bui_r(r.x + w->x, r.y + w->y, r.w, r.h));
+}
+
 int bui_comp_init(int sw, int sh, bui_px *target, int stride,
 		  void (*present)(const bui_rect *, int))
 {
@@ -546,7 +552,7 @@ void bui_comp_key(const bui_key *k)
 	bui_win *w = grab_target();
 	int i;
 
-	if (bui__input_filter(BUI_IN_KEY, k, 0))
+	if (bui__input_filter(BUI_IN_KEY, k, 0) || bui__key_hook(k))
 		return;
 	/* la tastiera va al popup modale piu' alto, altrimenti alla home */
 	for (i = K.nwins - 1; !w && i >= 0; i--)

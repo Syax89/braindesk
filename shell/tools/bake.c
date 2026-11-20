@@ -39,7 +39,33 @@ static const int cs_num_extra[] = { 0xD7, 0xF7, 0x2212, 0x2026, 0 };
 /* cifre enormi (orologio) */
 static const char cs_digits[] = "0123456789:., -";
 
-enum { CS_TEXT, CS_KEYS, CS_NUM, CS_DIGITS };
+/*
+ * terminale (DejaVu Sans Mono): ASCII, Latin-1, Latin Extended-A, greco,
+ * punteggiatura, frecce, simboli matematici e forme geometriche comuni.
+ * Linee dei riquadri, blocchi e braille (U+2500-259F, U+2800-28FF) non
+ * servono: view_term.c li disegna a misura di cella, cosi' si uniscono
+ * senza buchi. I codici che il font non ha vengono saltati (la vista
+ * disegna un rettangolo).
+ */
+static const int cs_mono_ranges[][2] = {
+	{ 0x20, 0x7E }, { 0xA0, 0xFF }, { 0x100, 0x17F }, { 0x192, 0x192 }, { 0x218, 0x21B },
+	{ 0x2C6, 0x2C7 }, { 0x2D8, 0x2DD }, { 0x391, 0x3A9 }, { 0x3B1, 0x3C9 },
+	{ 0x2010, 0x2027 }, { 0x2030, 0x2030 }, { 0x2032, 0x2033 }, { 0x2039, 0x203A },
+	{ 0x203C, 0x203C }, { 0x2044, 0x2044 }, { 0x2070, 0x2079 }, { 0x2080, 0x2089 },
+	{ 0x20AC, 0x20AC }, { 0x2116, 0x2116 }, { 0x2122, 0x2122 }, { 0x2190, 0x2199 },
+	{ 0x21B5, 0x21B5 }, { 0x21D0, 0x21D5 }, { 0x2200, 0x2200 }, { 0x2202, 0x2203 },
+	{ 0x2205, 0x2209 }, { 0x2211, 0x2215 }, { 0x2219, 0x221A }, { 0x221E, 0x221E },
+	{ 0x2227, 0x222B }, { 0x2248, 0x2248 }, { 0x2260, 0x2261 }, { 0x2264, 0x2265 },
+	{ 0x2302, 0x2302 }, { 0x2310, 0x2310 }, { 0x2320, 0x2321 }, { 0x23BA, 0x23BD },
+	{ 0x2409, 0x240D }, { 0x2424, 0x2424 }, { 0x25A0, 0x25A1 }, { 0x25AA, 0x25AC },
+	{ 0x25B2, 0x25B3 }, { 0x25B6, 0x25B6 }, { 0x25B8, 0x25BA }, { 0x25BC, 0x25BD },
+	{ 0x25C0, 0x25C0 }, { 0x25C2, 0x25C4 }, { 0x25C6, 0x25C7 }, { 0x25CB, 0x25CB },
+	{ 0x25CF, 0x25CF }, { 0x25D8, 0x25D9 }, { 0x25E6, 0x25E6 }, { 0x2605, 0x2606 },
+	{ 0x263A, 0x263C }, { 0x2640, 0x2642 }, { 0x2660, 0x2667 }, { 0x266A, 0x266B },
+	{ 0x2713, 0x2718 }, { 0xFFFD, 0xFFFD }, { 0, 0 }
+};
+
+enum { CS_TEXT, CS_KEYS, CS_NUM, CS_DIGITS, CS_MONO };
 
 struct fontspec {
 	const char *name;	/* bui_font_<name> */
@@ -59,6 +85,9 @@ static const struct fontspec fonts[] = {
 	{ "key26",  "DejaVuSans.ttf",      26, CS_KEYS,   0, 0.90 },
 	{ "num44",  "DejaVuSans.ttf",      44, CS_NUM,    0, 1.00 },
 	{ "num88",  "DejaVuSans.ttf",      88, CS_DIGITS, 0, 1.00 },
+	/* terminale: celle da 8x16 px (l'avanzamento a 13 px e' 7,8 px) */
+	{ "mono13",  "DejaVuSansMono.ttf",      13, CS_MONO, 0, 0.85 },
+	{ "monob13", "DejaVuSansMono-Bold.ttf", 13, CS_MONO, 0, 0.90 },
 };
 
 struct iconspec {
@@ -188,6 +217,14 @@ static int charset(int which, int *out)
 		for (i = 0; cs_digits[i]; i++)
 			out[n++] = (unsigned char)cs_digits[i];
 		break;
+	case CS_MONO:
+		for (i = 0; cs_mono_ranges[i][0]; i++) {
+			int c;
+
+			for (c = cs_mono_ranges[i][0]; c <= cs_mono_ranges[i][1] && n < 1000; c++)
+				out[n++] = c;
+		}
+		break;
 	}
 	qsort(out, n, sizeof(int), cmp_int);
 	/* niente doppioni */
@@ -220,7 +257,7 @@ static void bake_font(FILE *o, FILE *h, const char *dir, const struct fontspec *
 	char path[1024];
 	unsigned char *ttf, *data = NULL, lut[256];
 	stbtt_fontinfo f;
-	int cps[512], n, i, j, asc, desc, gap, nk = 0;
+	int cps[1024], n, i, j, asc, desc, gap, nk = 0, top = 0, bot = 0;
 	int *off, *gw, *gh, *gx, *gy, *adv;
 	long dlen = 0, dcap = 0;
 	float sc;
@@ -235,6 +272,15 @@ static void bake_font(FILE *o, FILE *h, const char *dir, const struct fontspec *
 	sc = stbtt_ScaleForMappingEmToPixels(&f, (float)fs->px);
 	stbtt_GetFontVMetrics(&f, &asc, &desc, &gap);
 	n = charset(fs->charset, cps);
+	if (fs->charset == CS_MONO) {
+		/* solo i glifi che il font ha davvero */
+		int m = 0;
+
+		for (i = 0; i < n; i++)
+			if (cps[i] == 0x20 || stbtt_FindGlyphIndex(&f, cps[i]))
+				cps[m++] = cps[i];
+		n = m;
+	}
 	off = calloc(n, sizeof(int));
 	gw = calloc(n, sizeof(int));
 	gh = calloc(n, sizeof(int));
@@ -261,6 +307,12 @@ static void bake_font(FILE *o, FILE *h, const char *dir, const struct fontspec *
 		gh[i] = hh;
 		gx[i] = x0;
 		gy[i] = -y0;		/* righe sopra la linea di base */
+		if (w > 0 && hh > 0) {
+			if (-y0 > top)
+				top = -y0;
+			if (y1 > bot)
+				bot = y1;
+		}
 		if (w > 255 || hh > 255 || gy[i] > 127 || gy[i] < -128) {
 			fprintf(stderr, "bake: glifo troppo grande\n");
 			exit(1);
@@ -344,8 +396,8 @@ static void bake_font(FILE *o, FILE *h, const char *dir, const struct fontspec *
 		(int)ceil(asc * sc), (int)ceil(-desc * sc),
 		(int)ceil((asc - desc + gap) * sc), cap_h, x_h);
 	fprintf(h, "extern const bui_font bui_font_%s;\n", fs->name);
-	fprintf(stderr, "  font %-7s %3d px  %3d glifi  %4d coppie  %6ld byte\n", fs->name, fs->px, n, nk,
-		dlen + n * 12L + nk * 3L);
+	fprintf(stderr, "  font %-7s %3d px  %3d glifi  %4d coppie  %6ld byte  (%d sopra, %d sotto)\n",
+		fs->name, fs->px, n, nk, dlen + n * 12L + nk * 3L, top, bot);
 	total_bytes += dlen + n * 12L + nk * 3L;
 	free(data);
 	free(ttf);

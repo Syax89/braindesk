@@ -670,4 +670,5 @@ const bui_backend bui_be_drm = {
 	.flush = b_flush,
 	.suspend = b_suspend,
 	.redraw_all = bui_comp_redraw_all,
+	.win_present = bui_comp_win_present,
 };

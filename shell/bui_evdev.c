@@ -255,7 +255,29 @@ static const struct {
 	{ KEY_ESC, BUI_K_ESC }, { KEY_BACKSPACE, BUI_K_BACKSPACE }, { KEY_TAB, BUI_K_TAB },
 	{ KEY_DELETE, BUI_K_DELETE }, { KEY_PAGEUP, BUI_K_PGUP }, { KEY_PAGEDOWN, BUI_K_PGDN },
 	{ KEY_HOME, BUI_K_HOME }, { KEY_END, BUI_K_END }, { KEY_HOMEPAGE, BUI_K_HOMEPAGE },
+	{ KEY_INSERT, BUI_K_INSERT },
 };
+
+/* tasti del dizionario del PW-SH5: anche il rilascio arriva (BUI_K_RELEASED) */
+static int dict_key(int code)
+{
+	return code == KEY_PAGEUP || code == KEY_PAGEDOWN || code == KEY_TAB || code == KEY_INSERT ||
+	       code == KEY_DELETE;
+}
+
+/* Ctrl + carattere -> codice di controllo, come XLookupString; 0 se nessuno */
+static int ctrl_code(int c)
+{
+	if (c >= '@' && c <= '~' && c != '@' && c != '`')
+		return c & 0x1F;
+	if (c == '?' || c == '8')
+		return 0x7F;
+	if (c >= '3' && c <= '7')
+		return 0x1B + (c - '3');
+	if (c == '/')
+		return 0x1F;
+	return 0;	/* Ctrl+Spazio, Ctrl+2, Ctrl+@: NUL, che un bui_key non puo' portare */
+}
 
 #define N(a) ((int)(sizeof(a) / sizeof((a)[0])))
 
@@ -294,9 +316,6 @@ static int translate(const bui_kbd *k, int code, bui_key *out)
 				out->mods = 0;
 				return 1;
 			}
-	/* come XLookupString: con Ctrl i tasti di carattere non producono testo */
-	if (k->mods & BUI_MOD_CTRL)
-		return 0;
 	for (i = 0; i < N(us); i++)
 		if (us[i].code == code) {
 			char c = us[i].lo;
@@ -305,6 +324,12 @@ static int translate(const bui_kbd *k, int code, bui_key *out)
 				c = shift ^ k->caps ? us[i].hi : us[i].lo;
 			else if (shift)
 				c = us[i].hi;
+			/* come XLookupString: con Ctrl niente testo, solo il codice di
+			 * controllo (sotto 0x20: le viste di testo lo ignorano) */
+			if (k->mods & BUI_MOD_CTRL) {
+				out->key = ctrl_code((unsigned char)c);
+				return out->key != 0;
+			}
 			out->key = (unsigned char)c;
 			return 1;
 		}
@@ -352,6 +377,10 @@ int bui_kbd_event(bui_kbd *k, int code, int value, uint32_t now, bui_key *out)
 	if (!value) {
 		if (code == k->rep_code)
 			k->rep_code = 0;
+		if (out && dict_key(code) && translate(k, code, out)) {
+			out->key |= BUI_K_RELEASED;
+			return 1;
+		}
 		return 0;
 	}
 	k->rep_code = 0;

@@ -500,8 +500,32 @@ static void nt_tick(bs_view *v, uint32_t now)
 		bui_toast("Impossibile salvare la nota", 3000);
 }
 
+static int nt_text_input(bs_view *v)
+{
+	(void)v;
+	return N.mode == M_EDIT;
+}
+
+void bs_notes_new(void)
+{
+	if (!bs_view_is_active(&bs_view_notes))
+		bs_open("notes");
+	if (!bs_view_is_active(&bs_view_notes))
+		return;
+	if (N.mode == M_EDIT) {
+		if (save() < 0) {
+			bui_toast("Impossibile salvare la nota", 3000);
+			return;
+		}
+		ne_close();
+	}
+	on_new(NULL);
+	bui_panel_damage(&N.p);
+}
+
 bs_view bs_view_notes = {
 	.flags = BS_VIEW_NO_HEADER,
+	.text_input = nt_text_input,
 	.enter = nt_enter,
 	.leave = nt_leave,
 	.layout = nt_layout,

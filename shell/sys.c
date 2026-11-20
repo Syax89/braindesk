@@ -68,7 +68,7 @@ static struct {
 		pid_t pid;
 		void (*cb)(int, void *);
 		void *user;
-	} watch[4];
+	} watch[8];
 } S;
 
 /* ------------------------------------------------------------------ */
@@ -180,6 +180,35 @@ void bs_sys_kernel(char *buf, int len)
 		snprintf(buf, (size_t)len, "%s", u.release);
 	else
 		snprintf(buf, (size_t)len, "\xE2\x80\x94");
+}
+
+/* uso della CPU in percento dall'ultima chiamata (/proc/stat); -1 alla prima */
+int bs_sys_cpu(void)
+{
+	static unsigned long long p_idle, p_total;
+	unsigned long long v[8] = { 0 }, idle, total = 0;
+	char full[320];
+	FILE *f;
+	int i, pct = -1;
+
+	snprintf(full, sizeof(full), "%s/proc/stat", S.root);
+	f = fopen(full, "re");
+	if (!f)
+		return -1;
+	if (fscanf(f, "cpu %llu %llu %llu %llu %llu %llu %llu %llu",
+		   &v[0], &v[1], &v[2], &v[3], &v[4], &v[5], &v[6], &v[7]) < 4) {
+		fclose(f);
+		return -1;
+	}
+	fclose(f);
+	for (i = 0; i < 8; i++)
+		total += v[i];
+	idle = v[3] + v[4];
+	if (p_total && total > p_total)
+		pct = (int)(100 - (idle - p_idle) * 100 / (total - p_total));
+	p_idle = idle;
+	p_total = total;
+	return pct > 100 ? 100 : pct;
 }
 
 int bs_sys_meminfo(long *total_kb, long *avail_kb)
@@ -358,7 +387,7 @@ int bs_child_watch(int pid, void (*cb)(int status, void *user), void *user)
 {
 	int i;
 
-	for (i = 0; i < 4; i++)
+	for (i = 0; i < 8; i++)
 		if (!S.watch[i].pid) {
 			S.watch[i].pid = pid;
 			S.watch[i].cb = cb;
@@ -372,7 +401,7 @@ static void reap(pid_t pid, int st)
 {
 	int i, code = WIFEXITED(st) ? WEXITSTATUS(st) : -1;
 
-	for (i = 0; i < 4; i++)
+	for (i = 0; i < 8; i++)
 		if (S.watch[i].pid == pid) {
 			void (*cb)(int, void *) = S.watch[i].cb;
 			void *user = S.watch[i].user;

@@ -26,12 +26,15 @@ bs_prefs bs_pref = {
 	.dim_s = 120,
 	.off_s = 0,
 	.sleep_s = 300,
+	.keys = { "switcher", "quick", "music", "note", "screenshot" },
 };
 int bs_pref_battery_percent = 1;
 
 static int save_timer;
 static const char *const anim_names[] = { "none", "reduced", "full" };
 static const char *const tile_names[] = { "filled", "glass", "outline" };
+/* tasti del dizionario, nell'ordine di BS_KEY_* */
+static const char *const key_conf[5] = { "key_kokugo", "key_eiwa", "key_english", "key_mydict", "key_history" };
 
 static int conf_path(char *buf, size_t len, const char *suffix)
 {
@@ -96,6 +99,12 @@ void bs_conf_load(void)
 			snprintf(bs_pref.order, sizeof(bs_pref.order), "%s", v);
 		} else if (!strcmp(line, "hidden")) {
 			snprintf(bs_pref.hidden, sizeof(bs_pref.hidden), "%s", v);
+		} else {
+			int i;
+
+			for (i = 0; i < 5; i++)
+				if (!strcmp(line, key_conf[i]))
+					snprintf(bs_pref.keys[i], sizeof(bs_pref.keys[i]), "%s", v);
 		}
 	}
 	fclose(f);
@@ -103,7 +112,7 @@ void bs_conf_load(void)
 
 void bs_conf_flush(void)
 {
-	char path[320], tmp[320], dir[320], buf[1024];
+	char path[320], tmp[320], dir[320], buf[1280];
 	const char *home = getenv("HOME");
 	int fd, n;
 
@@ -128,6 +137,16 @@ void bs_conf_flush(void)
 		     bs_pref.order, bs_pref.hidden);
 	if (n < 0 || n >= (int)sizeof(buf))
 		return;
+	{
+		int i, m;
+
+		for (i = 0; i < 5; i++) {
+			m = snprintf(buf + n, sizeof(buf) - (size_t)n, "%s=%s\n", key_conf[i], bs_pref.keys[i]);
+			if (m < 0 || n + m >= (int)sizeof(buf))
+				return;
+			n += m;
+		}
+	}
 	fd = open(tmp, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0644);
 	if (fd < 0)
 		return;

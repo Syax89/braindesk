@@ -284,6 +284,21 @@ void bs_bar_close_popups(void)
 	qs_close();
 }
 
+static void qs_open(void);
+
+void bs_bar_quick_toggle(void)
+{
+	if (B.qs && B.pop_kind == POP_QS)
+		qs_dismiss();
+	else
+		qs_open();
+}
+
+int bs_bar_quick_open(void)
+{
+	return B.qs != NULL;
+}
+
 void bs_ask_power(void)
 {
 	/* lo stesso menu della pressione lunga del tasto di accensione */

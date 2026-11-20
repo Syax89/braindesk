@@ -1,0 +1,24 @@
+  GNU nano 8.4                       /tmp/g.txt *
+riga 1: testo di prova con accentate àèìòù e simboli € °
+riga 2: testo di prova con accentate àèìòù e simboli € °
+riga 3: testo di prova con accentate àèìòù e simboli € °
+ciaoriga 4: testo di prova con accentate àèìòù e simboli € °
+riga 5: testo di prova con accentate àèìòù e simboli € °
+riga 6: testo di prova con accentate àèìòù e simboli € °
+riga 7: testo di prova con accentate àèìòù e simboli € °
+riga 8: testo di prova con accentate àèìòù e simboli € °
+riga 9: testo di prova con accentate àèìòù e simboli € °
+riga 10: testo di prova con accentate àèìòù e simboli € °
+riga 11: testo di prova con accentate àèìòù e simboli € °
+riga 12: testo di prova con accentate àèìòù e simboli € °
+riga 13: testo di prova con accentate àèìòù e simboli € °
+riga 14: testo di prova con accentate àèìòù e simboli € °
+riga 15: testo di prova con accentate àèìòù e simboli € °
+riga 16: testo di prova con accentate àèìòù e simboli € °
+riga 17: testo di prova con accentate àèìòù e simboli € °
+riga 18: testo di prova con accentate àèìòù e simboli € °
+riga 19: testo di prova con accentate àèìòù e simboli € °
+riga 20: testo di prova con accentate àèìòù e simboli € °
+                               [ Read 100 lines ]
+^G Help      ^O Write Out ^F Where Is  ^K Cut       ^T Execute   ^C Location
+^X Exit      ^R Read File ^\ Replace   ^U Paste     ^J Justify   ^/ Go To Line

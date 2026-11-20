@@ -1527,8 +1527,15 @@ static void fl_leave(bs_view *v)
 	F.title_w = F.sub_w = F.list_w = F.side_w = F.edit_w = NULL;
 }
 
+static int fl_text_input(bs_view *v)
+{
+	(void)v;
+	return F.mode == M_RENAME;	/* nel campo di rinomina Canc e Tab sono tasti */
+}
+
 bs_view bs_view_files = {
 	.flags = BS_VIEW_NO_HEADER,
+	.text_input = fl_text_input,
 	.enter = fl_enter,
 	.leave = fl_leave,
 	.layout = fl_layout,

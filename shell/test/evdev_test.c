@@ -295,10 +295,11 @@ static void test_keys(void)
 	CHECK(press(&k, KEY_SPACE, &o) && o.key == ' ', "spazio");
 	CHECK(press(&k, KEY_ENTER, &o) && o.key == BUI_K_ENTER, "Invio");
 	CHECK(press(&k, KEY_KPENTER, &o) && o.key == BUI_K_ENTER, "Invio del tastierino");
-	CHECK(press(&k, KEY_ESC, &o) && o.key == BUI_K_ESC, "Esc (Home del Brain)");
+	CHECK(press(&k, KEY_ESC, &o) && o.key == BUI_K_ESC, "Esc (Go Back del Brain)");
 	CHECK(press(&k, KEY_PAGEUP, &o) && o.key == BUI_K_PGUP, "PagSu");
 	CHECK(press(&k, KEY_BACKSPACE, &o) && o.key == BUI_K_BACKSPACE, "Backspace");
-	CHECK(!press(&k, KEY_INSERT, &o), "Ins non ha un equivalente");
+	CHECK(press(&k, KEY_INSERT, &o) && o.key == BUI_K_INSERT, "Ins (My Dictionary)");
+	CHECK(press(&k, KEY_DELETE, &o) && o.key == BUI_K_DELETE, "Canc (Rireki)");
 
 	bui_kbd_event(&k, KEY_LEFTSHIFT, 1, 0, &o);
 	CHECK(press(&k, KEY_A, &o) && o.key == 'A' && o.mods == BUI_MOD_SHIFT, "Shift+a");
@@ -317,7 +318,18 @@ static void test_keys(void)
 	press(&k, KEY_CAPSLOCK, &o);
 
 	bui_kbd_event(&k, KEY_LEFTCTRL, 1, 0, &o);
-	CHECK(!press(&k, KEY_A, &o), "Ctrl+a non produce testo (come XLookupString)");
+	/* Ctrl + carattere: niente testo, il codice di controllo (come XLookupString) */
+	CHECK(press(&k, KEY_A, &o) && o.key == 0x01 && o.mods == BUI_MOD_CTRL, "Ctrl+a = 0x01");
+	CHECK(press(&k, KEY_C, &o) && o.key == 0x03, "Ctrl+c = 0x03");
+	CHECK(press(&k, KEY_Z, &o) && o.key == 0x1A, "Ctrl+z = 0x1A");
+	CHECK(press(&k, KEY_LEFTBRACE, &o) && o.key == 0x1B, "Ctrl+[ = ESC");
+	CHECK(press(&k, KEY_BACKSLASH, &o) && o.key == 0x1C, "Ctrl+\\ = 0x1C");
+	CHECK(!press(&k, KEY_SPACE, &o), "Ctrl+Spazio (NUL) non arriva");
+	CHECK(press(&k, KEY_TAB, &o) && o.key == BUI_K_TAB && o.mods == BUI_MOD_CTRL, "Ctrl+Tab resta Tab");
+	bui_kbd_event(&k, KEY_LEFTSHIFT, 1, 0, &o);
+	CHECK(press(&k, KEY_A, &o) && o.key == 0x01 && o.mods == (BUI_MOD_CTRL | BUI_MOD_SHIFT), "Ctrl+Shift+a");
+	CHECK(press(&k, KEY_SLASH, &o) && o.key == 0x7F, "Ctrl+? = DEL");
+	bui_kbd_event(&k, KEY_LEFTSHIFT, 0, 0, &o);
 	CHECK(press(&k, KEY_HOME, &o) && o.key == BUI_K_HOME && o.mods == BUI_MOD_CTRL, "Ctrl+Home");
 	bui_kbd_event(&k, KEY_LEFTALT, 1, 0, &o);
 	CHECK(press(&k, KEY_ESC, &o) && o.key == BUI_K_ESC &&
@@ -418,6 +430,55 @@ static void test_repeat(void)
 	CHECK(bui_kbd_code_by_name("XF86HomePage") == KEY_HOMEPAGE, "nome XF86HomePage");
 }
 
+/*
+ * Tasti del dizionario del PW-SH5 (device tree): Kokugo = PagSu, Eiwa/Waei =
+ * PagGiu', Brain English = Tab, My Dictionary = Ins, Rireki = Canc. Arriva
+ * anche il rilascio (BUI_K_RELEASED), per distinguere tocco e pressione
+ * lunga; la ripetizione resta (nei testi PagSu/Canc tenuti premuti servono).
+ */
+static void test_dict(void)
+{
+	static const struct {
+		int code, key;
+		const char *name;
+	} d[] = {
+		{ KEY_PAGEUP, BUI_K_PGUP, "Kokugo" }, { KEY_PAGEDOWN, BUI_K_PGDN, "Eiwa/Waei" },
+		{ KEY_TAB, BUI_K_TAB, "Brain English" }, { KEY_INSERT, BUI_K_INSERT, "My Dictionary" },
+		{ KEY_DELETE, BUI_K_DELETE, "Rireki" },
+	};
+	bui_kbd k;
+	bui_key o;
+	unsigned i;
+
+	for (i = 0; i < sizeof(d) / sizeof(d[0]); i++) {
+		bui_kbd_reset(&k);
+		CHECK(bui_kbd_event(&k, d[i].code, 1, 1000, &o) && o.key == d[i].key && !o.mods, "%s premuto", d[i].name);
+		CHECK(bui_kbd_repeat(&k, 1500, &o) && o.key == d[i].key, "%s si ripete", d[i].name);
+		CHECK(bui_kbd_event(&k, d[i].code, 0, 1600, &o) && o.key == (d[i].key | BUI_K_RELEASED),
+		      "%s rilasciato", d[i].name);
+		CHECK(!bui_kbd_repeat(&k, 3000, &o), "%s: nessuna ripetizione dopo il rilascio", d[i].name);
+		/* con Onsei (Alt): i modificatori viaggiano con pressione e rilascio */
+		bui_kbd_event(&k, KEY_LEFTALT, 1, 4000, &o);
+		CHECK(bui_kbd_event(&k, d[i].code, 1, 4100, &o) && o.key == d[i].key && o.mods == BUI_MOD_ALT,
+		      "Onsei+%s", d[i].name);
+		CHECK(bui_kbd_event(&k, d[i].code, 0, 4200, &o) && o.key == (d[i].key | BUI_K_RELEASED) &&
+		      o.mods == BUI_MOD_ALT, "Onsei+%s rilasciato", d[i].name);
+		bui_kbd_event(&k, KEY_LEFTALT, 0, 4300, &o);
+	}
+	/* gli altri tasti non mandano il rilascio */
+	bui_kbd_reset(&k);
+	bui_kbd_event(&k, KEY_A, 1, 0, &o);
+	CHECK(!bui_kbd_event(&k, KEY_A, 0, 10, &o), "rilascio di una lettera: niente");
+	bui_kbd_event(&k, KEY_ESC, 1, 0, &o);
+	CHECK(!bui_kbd_event(&k, KEY_ESC, 0, 10, &o), "rilascio di Go Back: niente");
+	/* Ctrl sul Brain e' il tasto "Page up" (KEY_LEFTCTRL): resta un modificatore */
+	bui_kbd_event(&k, KEY_LEFTCTRL, 1, 0, &o);
+	CHECK(bui_kbd_event(&k, KEY_PAGEUP, 1, 20, &o) && o.key == BUI_K_PGUP && o.mods == BUI_MOD_CTRL,
+	      "Ctrl+Kokugo");
+	CHECK(bui_kbd_code_by_name("Insert") == KEY_INSERT && bui_kbd_code_by_name("Prior") == KEY_PAGEUP,
+	      "nomi Insert, Prior");
+}
+
 int main(void)
 {
 	test_map();
@@ -427,6 +488,7 @@ int main(void)
 	test_dropped();
 	test_keys();
 	test_repeat();
+	test_dict();
 	(void)tn;
 	printf("evdev_test: %d controlli, %d falliti\n", checks, fails);
 	return fails != 0;

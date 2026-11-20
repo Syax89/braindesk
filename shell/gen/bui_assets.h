@@ -11,6 +11,8 @@ extern const bui_font bui_font_bold22;
 extern const bui_font bui_font_key26;
 extern const bui_font bui_font_num44;
 extern const bui_font bui_font_num88;
+extern const bui_font bui_font_mono13;
+extern const bui_font bui_font_monob13;
 
 /* icone: Material Icons Round (Apache-2.0) */
 extern const bui_icon bui_ic_home_24;

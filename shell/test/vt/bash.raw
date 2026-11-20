@@ -1,0 +1,10 @@
+[?2004h]0;root@923445231bec: /[01;32mroot@923445231bec[00m:[01;34m/[00m$ cd /tmp
+[?2004l[?2004h]0;root@923445231bec: /tmp[01;32mroot@923445231bec[00m:[01;34m/tmp[00m$ echo città €
+[?2004lcittà €
+[?2004h]0;root@923445231bec: /tmp[01;32mroot@923445231bec[00m:[01;34m/tmp[00m$ ls --color=auto -F /tmp/d
+[?2004l[0m[01;34maltra[0m/  [01;34mcartella[0m/  file.txt  foto.jpg  [01;36mlink[0m@  [01;32mscript.sh[0m*
+[?2004h]0;root@923445231bec: /tmp[01;32mroot@923445231bec[00m:[01;34m/tmp[00m$ printf "\e[1;31mrosso\e[0m \e[38;5;208mara\e[0m \e[38;2;10;200;30mvero\e[0m \e[7minv\e[0m\n"
+[?2004l[1;31mrosso[0m [38;5;208mara[0m [38;2;10;200;30mvero[0m [7minv[0m
+[?2004h]0;root@923445231bec: /tmp[01;32mroot@923445231bec[00m:[01;34m/tmp[00m$ echo xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx fine
+[?2004lxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx fine
+[?2004h]0;root@923445231bec: /tmp[01;32mroot@923445231bec[00m:[01;34m/tmp[00m$ echo ciaoXciao

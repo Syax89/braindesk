@@ -108,6 +108,12 @@ static void on_vol(bui_widget *w, int final)
 	bs_set_volume(w->value, final);
 }
 
+static void on_keys(bui_widget *w)
+{
+	(void)w;
+	bs_open("keys");	/* Impostazioni -> Tasti (view_keys.c) */
+}
+
 static void on_rotate(bui_widget *w)
 {
 	(void)w;
@@ -275,6 +281,15 @@ static void st_layout(bs_view *v, bui_rect a)
 	y = slider_block(p, x, y, cw, "Volume", BUI_IC(vol_up, 24), S.s_vol, &S.vol_val, &S.vol, 0,
 			 bs_volume(), on_vol);
 	y += 4;
+	card->r.h = y - card->r.y;
+	y += 12;
+
+	/* tasti del dizionario: una pagina a parte */
+	y = section(p, x, y, cw, "TASTI");
+	card = bui_add_card(p, bui_r(x, y, cw, 0));
+	bui_add_row(p, bui_r(x, y, cw, 56), BUI_IC(apps, 24), "Tasti del dizionario", "Kokugo, Eiwaâ¦",
+		    on_keys);
+	y += 56;
 	card->r.h = y - card->r.y;
 	y1 = y + 12;
 

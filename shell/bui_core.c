@@ -22,7 +22,7 @@
 #define MAX_TIMERS 24
 #define MAX_ANIMS 8
 #define MAX_FDS 24
-#define MAX_FILTERS 4
+#define MAX_FILTERS 6
 
 struct timer {
 	int id;
@@ -60,6 +60,7 @@ static struct {
 	int has_epoch;
 	int nfilters;
 	void (*query)(char *, int);
+	int (*key_hook)(const bui_key *);
 } C;
 
 uint32_t bui_now(void)
@@ -179,6 +180,28 @@ int bui__input_filter(int kind, const bui_key *k, int suspended)
 		if (C.filters[i](kind, k, suspended))
 			drop = 1;
 	return drop;
+}
+
+void bui_set_key_hook(int (*hook)(const bui_key *k))
+{
+	C.key_hook = hook;
+}
+
+int bui__key_hook(const bui_key *k)
+{
+	if (C.key_hook && C.key_hook(k))
+		return 1;
+	return (k->key & BUI_K_RELEASED) != 0;	/* i rilasci non arrivano mai alle finestre */
+}
+
+void bui_win_present(bui_win *w, bui_rect r)
+{
+	if (!w || !C.be || !bui_rect_isect(r, bui_r(0, 0, w->w, w->h), &r))
+		return;
+	if (C.be->win_present)
+		C.be->win_present(w, r);
+	else
+		bui_win_damage(w, r);
 }
 
 void bui_input_ignore_before(uint32_t t)

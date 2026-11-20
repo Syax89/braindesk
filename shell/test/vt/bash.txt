@@ -1,0 +1,24 @@
+root@923445231bec:/$ cd /tmp
+root@923445231bec:/tmp$ echo città €
+città €
+root@923445231bec:/tmp$ ls --color=auto -F /tmp/d
+altra/  cartella/  file.txt  foto.jpg  link@  script.sh*
+root@923445231bec:/tmp$ printf "\e[1;31mrosso\e[0m \e[38;5;208mara\e[0m \e[38;2;
+10;200;30mvero\e[0m \e[7minv\e[0m\n"
+rosso ara vero inv
+root@923445231bec:/tmp$ echo xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx fine
+xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+xxxxxxxxxxxx fine
+root@923445231bec:/tmp$ echo Xciao
+
+
+
+
+
+
+
+
+
+
+

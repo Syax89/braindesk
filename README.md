@@ -66,7 +66,8 @@ microSD card; BrainDesk starts from there and focuses on three things only:
 | Brightness, dimming and screen-off when idle | ✅ |
 | Rescue boot with the stock kernel (three resets) | ✅ |
 | Compressed swap in RAM (zram) | ✅ |
-| Dictionary keys (国語, 英和, Brain English, history…) with their own functions | 🔜 |
+| Dictionary keys (国語, 英和, Brain English, マイ辞書, 履歴) with shell functions: recent-apps switcher, quick settings, music play/pause, notes, screenshot, Onsei + key for brightness/volume; configurable in Settings → Keys | 🧪 implemented and tested in the emulated backend, not yet verified on the device |
+| Native terminal (no X): PTY + built-in VT100/xterm emulator (256 colours/truecolor, scroll regions, alternate screen, UTF-8), 106×24 cells, 1000-line scrollback with touch scrolling, touch key bar; `st` under X kept as a fallback | ✅ opens instantly on the device |
 
 ## Numbers measured on the device
 

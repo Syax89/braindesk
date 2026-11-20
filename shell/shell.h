@@ -46,6 +46,10 @@ struct bs_view {
 	void (*tick)(bs_view *v, uint32_t now_ms);
 	/* cambiamenti di sistema: BS_EV_* */
 	void (*notify)(bs_view *v, int what);
+	/* 1 se in questo momento la vista scrive testo (editor, campo, terminale):
+	 * i tasti del dizionario restano allora PagSu/PagGiu'/Tab/Ins/Canc
+	 * invece delle funzioni della shell (keys.c). NULL = mai */
+	int (*text_input)(bs_view *v);
 
 	/* impostati dalla shell prima di enter() */
 	const bs_app *app;
@@ -66,6 +70,11 @@ void bs_view_damage(bui_rect r);
 void bs_view_set_title(const char *title);
 /* vero se la vista e' quella mostrata in questo momento */
 int bs_view_is_active(const bs_view *v);
+/* vista mostrata e ferma (nessuna transizione): i suoi pixel nella tela sono
+ * quelli che ha disegnato, si possono spostare e inviare (bui_win_present) */
+int bs_view_settled(const bs_view *v);
+/* la vista attiva sta ricevendo testo (text_input) */
+int bs_home_text_input(void);
 /* apre un'app del registro dato il suo id; ritorna 0 se esiste */
 int bs_open(const char *id);
 
@@ -91,6 +100,50 @@ extern const int bs_napps;
 extern bs_view bs_view_settings, bs_view_clock, bs_view_calc, bs_view_stub, bs_view_demo;
 extern bs_view bs_view_notes, bs_view_music, bs_view_video;
 extern bs_view bs_view_files, bs_view_gallery;
+extern bs_view bs_view_term, bs_view_keys;
+
+/* ------------------------------------------------------------------ */
+/* Terminale (view_term.c)                                            */
+/* ------------------------------------------------------------------ */
+
+/* un programma in primo piano nel terminale ha scritto negli ultimi 30 s:
+ * la sospensione automatica aspetta (power.c) */
+int bs_term_keep_awake(void);
+/* "none", "running", "exited" (per le prove) */
+const char *bs_term_state(void);
+
+/* ------------------------------------------------------------------ */
+/* Tasti del dizionario e app recenti (keys.c)                        */
+/* ------------------------------------------------------------------ */
+
+enum { BS_KEY_KOKUGO, BS_KEY_EIWA, BS_KEY_ENGLISH, BS_KEY_MYDICT, BS_KEY_HISTORY, BS_NKEYS };
+enum {
+	BS_KA_STANDARD,		/* tasto normale (PagSu, PagGiu', Tab, Ins, Canc) */
+	BS_KA_NONE,		/* nessuna azione */
+	BS_KA_SWITCHER,		/* app recenti */
+	BS_KA_QUICK,		/* impostazioni rapide */
+	BS_KA_SCREENSHOT,
+	BS_KA_SAVER,		/* risparmio energetico si'/no */
+	BS_KA_MUSIC,		/* Musica: riproduci/pausa (o apre Musica) */
+	BS_KA_NOTE,		/* Note; tenuto premuto: nuova nota */
+	BS_KA_APP,		/* apre un'app del registro */
+	BS_KA_COUNT
+};
+
+void bs_keys_init(void);
+/* l'app e' stata aperta (elenco delle recenti) */
+void bs_keys_recent(const bs_app *a);
+/* azione e app (per BS_KA_APP) del tasto; app = "" se nessuna */
+int bs_key_action(int key, const char **app);
+void bs_key_set(int key, int action, const char *app);
+void bs_keys_defaults(void);
+const char *bs_key_name(int key);		/* "Kokugo" */
+const char *bs_key_std_name(int key);		/* "PagSu" */
+const char *bs_key_action_label(int action);	/* "App recenti" */
+/* testo per Impostazioni: "App recenti", "Apri Calcolatrice" */
+void bs_key_describe(int key, char *buf, int len);
+void bs_switcher_close(void);
+int bs_switcher_is_open(void);
 
 /* ------------------------------------------------------------------ */
 /* Sistema (sys.c)                                                    */
@@ -139,6 +192,7 @@ int bs_launch(const char *const argv[], const char *label);
 int bs_read_line(const char *path, char *buf, int len);
 void bs_sys_kernel(char *buf, int len);
 int bs_sys_meminfo(long *total_kb, long *avail_kb);
+int bs_sys_cpu(void);
 int bs_sys_storage(long long *total_bytes, long long *free_bytes);
 
 /* ------------------------------------------------------------------ */
@@ -156,6 +210,7 @@ typedef struct bs_prefs {
 				 * schermo spento dopo 30 s, sospensione dopo 1 min */
 	char order[256];	/* id delle app nell'ordine della griglia, separati da virgole */
 	char hidden[256];	/* id delle app nascoste */
+	char keys[5][24];	/* azioni dei tasti del dizionario: "switcher", "app:calc"... (keys.c) */
 } bs_prefs;
 
 extern bs_prefs bs_pref;
@@ -301,6 +356,9 @@ const char *bs_home_view_id(void);
 
 bui_win *bs_bar_init(void);
 void bs_bar_notify(int ev);
+/* impostazioni rapide: apre, o chiude se gia' aperte */
+void bs_bar_quick_toggle(void);
+int bs_bar_quick_open(void);	/* impostazioni rapide o calendario aperti */
 void bs_bar_screen_changed(void);
 void bs_bar_close_popups(void);	/* impostazioni rapide e calendario, senza animazione */
 
@@ -319,6 +377,9 @@ void bs_home_set_now_playing(const char *title, int state);
 /* cronologia degli ultimi toast (per il popup del calendario) */
 #define BS_NOTES_MAX 4
 int bs_notes_get(int i, const char **text, const char **when);
+
+/* Note: apre la vista con una nota nuova (tasto My Dictionary tenuto) */
+void bs_notes_new(void);
 
 /* azioni comuni con conferma */
 void bs_ask_rotate(void);

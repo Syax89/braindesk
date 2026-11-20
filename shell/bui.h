@@ -229,6 +229,8 @@ typedef struct bui_icon {
 #define BUI_FONT_KEY		(&bui_font_key26)	/* solo cifre e operatori */
 #define BUI_FONT_NUM		(&bui_font_num44)	/* solo cifre e operatori */
 #define BUI_FONT_HUGE		(&bui_font_num88)	/* solo cifre : . , - */
+#define BUI_FONT_MONO		(&bui_font_mono13)	/* terminale: celle da 8x16 */
+#define BUI_FONT_MONO_B		(&bui_font_monob13)
 
 #define BUI_IC(name, px)	(&bui_ic_##name##_##px)
 
@@ -280,7 +282,18 @@ enum {
 	/* tasto Home del Brain (evdev KEY_HOMEPAGE, X XF86HomePage): torna alla
 	 * griglia da ovunque; anche questo lo intercetta la shell */
 	BUI_K_HOMEPAGE,
+	BUI_K_INSERT,		/* Ins (sul Brain: il tasto "My Dictionary") */
 };
+/*
+ * Rilascio di un tasto del dizionario (PagSu, PagGiu', Tab, Ins, Canc: sul
+ * Brain Kokugo, Eiwa, Brain English, My Dictionary, Rireki): key = tasto |
+ * BUI_K_RELEASED. Lo vede solo l'aggancio della shell (bui_set_key_hook),
+ * mai una finestra; serve a distinguere tocco breve e pressione lunga. Solo
+ * da evdev (backend drm e mem). Con Ctrl i tasti di lettera arrivano come
+ * codice di controllo (1..31, 127) e BUI_MOD_CTRL: le viste che scrivono
+ * testo li ignorano gia' (< 0x20), il terminale li manda cosi' come sono.
+ */
+#define BUI_K_RELEASED 0x01000000
 enum { BUI_MOD_SHIFT = 1, BUI_MOD_CTRL = 2, BUI_MOD_ALT = 4 };
 
 typedef struct bui_key {
@@ -358,6 +371,12 @@ int bui_add_input_filter(int (*f)(int kind, const bui_key *k, int suspended));
  * scartati.
  */
 void bui_input_ignore_before(uint32_t t);
+/*
+ * Aggancio dei tasti: chiamato per ogni tasto che i filtri non hanno
+ * scartato (mai a schermo ceduto), prima della finestra che lo riceverebbe.
+ * Ritorna 1 se l'ha usato. Riceve anche i rilasci BUI_K_RELEASED.
+ */
+void bui_set_key_hook(int (*hook)(const bui_key *k));
 /* ridisegna e reinvia tutte le finestre (il pannello puo' aver perso l'immagine) */
 void bui_redraw_all(void);
 /* porta a termine subito tutte le animazioni in corso */
@@ -384,6 +403,9 @@ void bui_win_move_resize(bui_win *w, bui_rect r);
 void bui_win_set_strut_top(bui_win *w, int h);
 void bui_win_damage(bui_win *w, bui_rect r);
 void bui_win_damage_all(bui_win *w);
+/* i pixel di r sono gia' giusti nella tela (scritti fuori da paint, es. righe
+ * spostate con memmove): inviarli senza ridisegnare */
+void bui_win_present(bui_win *w, bui_rect r);
 
 /* popup: finestra senza gestore, sopra tutto. Cattura lo schermo sotto di se'
  * (backdrop) cosi' angoli arrotondati e ombre si fondono con cio' che c'e'. */
