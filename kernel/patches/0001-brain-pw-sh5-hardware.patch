@@ -1,0 +1,3603 @@
+diff --git a/arch/arm/boot/dts/imx28-pwsh5.dts b/arch/arm/boot/dts/imx28-pwsh5.dts
+index ff387efc5..3ee414185 100644
+--- a/arch/arm/boot/dts/imx28-pwsh5.dts
++++ b/arch/arm/boot/dts/imx28-pwsh5.dts
+@@ -93,7 +93,7 @@ &keyboard_gpio {
+ 		<4 6 0>,      /* Symbols (specify 0 to mark this key used) */
+ 
+ 		/* Bank 0x20 */
+-		<5 0 KEY_ESC>,        /* Home */
++		<5 0 KEY_HOMEPAGE>,   /* Home: back to the home screen (was KEY_ESC, same as Go Back) */
+ 		<5 1  KEY_Q>,         /* Q */
+ 		<5 2 KEY_W>,          /* W */
+ 		<5 3 KEY_E>,          /* E */
+@@ -147,3 +147,92 @@ &keyboard_gpio {
+ 		<6 6 KEY_LEFTALT>,    /* Onsei */
+ 		<3 0 KEY_BACKSPACE>;  /* Backspace */
+ };
++
++/*
++ * Hardware brought up for the PW-SH5 (Brain Hackers / brain-pxp work):
++ * Pixel Pipeline, RTC shared with Windows CE, battery reporting and the
++ * ROHM BU26154 audio codec found at i2c0 0x1a (the sgtl5000 node is an
++ * i.MX28 EVK leftover and is not populated on this board).
++ */
++
++/*
++ * USB as a device (NCM Ethernet gadget towards the PC), as set by
++ * "brain-config -> USB -> peripheral" on Brainux.
++ */
++&usb0 {
++	dr_mode = "peripheral";
++};
++
++&pxp {
++	compatible = "fsl,imx28-pxp";
++	status = "okay";
++};
++
++&mxs_rtc {
++	status = "okay";
++	/* Windows CE keeps JST (UTC+9) seconds since 2000-01-01 */
++	sharp,rtc-offset-seconds = <946652400>;
++	/* 32.768 kHz crystal, as Windows CE uses it: no clock source switch at boot */
++	stmp,crystal-freq = <32768>;
++};
++
++&power {
++	battery {
++		compatible = "sharp,brain-battery";
++		/* PSWITCH (power button), on the 5 V detectors' interrupt line */
++		interrupts = <6>;
++		io-channels = <&lradc 7>, <&lradc 8>, <&lradc 0>;
++		io-channel-names = "vbatt", "temp", "batt-temp";
++		voltage-min-design-microvolt = <3300000>;
++		voltage-max-design-microvolt = <4200000>;
++		/*
++		 * Li-ion charger run by the driver (the firmware leaves it
++		 * off). Values of SHARP's firmware for a USB port: 450 mA
++		 * with the 5 V input limited to 480 mA, stop under 50 mA.
++		 */
++		sharp,charge-current-microamp = <450000>;
++		sharp,precharge-current-microamp = <80000>;
++		sharp,term-current-microamp = <50000>;
++		sharp,input-current-limit-microamp = <480000>;
++		sharp,recharge-microvolt = <4000000>;
++		sharp,charge-timeout-seconds = <36000>;
++	};
++};
++
++&sgtl5000 {
++	status = "disabled";
++};
++
++&i2c0 {
++	bu26154: codec@1a {
++		compatible = "rohm,bu26154";
++		reg = <0x1a>;
++		#sound-dai-cells = <0>;
++	};
++};
++
++/*
++ * Headphone jack switch: GPMI_RDN used as GPIO0_24, low when a plug is in
++ * (pin and polarity from the BU26154 wave driver of the Windows CE firmware).
++ */
++&pinctrl {
++	hp_det_pin: hp-det@0 {
++		reg = <0>;
++		fsl,pinmux-ids = <MX28_PAD_GPMI_RDN__GPIO_0_24>;
++		fsl,drive-strength = <MXS_DRIVE_4mA>;
++		fsl,voltage = <MXS_VOLTAGE_HIGH>;
++		fsl,pull-up = <MXS_PULL_ENABLE>;
++	};
++};
++
++/ {
++	sound {
++		compatible = "sharp,brain-audio-bu26154";
++		model = "Brain";
++		saif-controllers = <&saif0 &saif1>;
++		audio-codec = <&bu26154>;
++		pinctrl-names = "default";
++		pinctrl-0 = <&hp_det_pin>;
++		hp-det-gpios = <&gpio0 24 GPIO_ACTIVE_LOW>;
++	};
++};
+diff --git a/drivers/gpu/drm/tiny/brain-lq050j1ug01.c b/drivers/gpu/drm/tiny/brain-lq050j1ug01.c
+index 8a11ca82d..d62eb1eb8 100644
+--- a/drivers/gpu/drm/tiny/brain-lq050j1ug01.c
++++ b/drivers/gpu/drm/tiny/brain-lq050j1ug01.c
+@@ -625,11 +625,12 @@ static int brain_probe(struct platform_device *pdev)
+ 
+ 	for (i = 0; i < gpiod_count(&pdev->dev, "sharp,en"); i++) {
+ 		en = devm_gpiod_get_index(&pdev->dev, "sharp,en", i, GPIOD_OUT_HIGH);
+-		if (IS_ERR(en))
++		if (IS_ERR(en)) {
+ 			dev_err(&pdev->dev, "failed to get gpio %d\n", i);
+ 			continue;
++		}
+ 		ret = gpiod_direction_output(en, 1);
+-		if (IS_ERR(en))
++		if (ret)
+ 			dev_err(&pdev->dev, "failed to output gpio %d\n", i);
+ 	}
+ 	
+diff --git a/drivers/gpu/drm/tiny/brain.c b/drivers/gpu/drm/tiny/brain.c
+index 59c826758..2d4c5f897 100644
+--- a/drivers/gpu/drm/tiny/brain.c
++++ b/drivers/gpu/drm/tiny/brain.c
+@@ -17,8 +17,11 @@
+ #include <linux/gpio.h>
+ #include <linux/gpio/consumer.h>
+ #include <linux/iopoll.h>
++#include <linux/brain_lcd.h>
++#include <linux/gcd.h>
+ #include <linux/media-bus-format.h>
+ #include <linux/module.h>
++#include <linux/mutex.h>
+ #include <linux/of_device.h>
+ #include <linux/platform_device.h>
+ #include <linux/property.h>
+@@ -35,6 +38,7 @@
+ #include <drm/drm_gem_framebuffer_helper.h>
+ #include <drm/drm_mipi_dbi.h>
+ #include <drm/drm_modeset_helper.h>
++#include <drm/drm_modeset_lock.h>
+ #include <drm/drm_probe_helper.h>
+ #include <drm/drm_vblank.h>
+ #include <video/mipi_display.h>
+@@ -55,6 +59,8 @@ struct brain_drm_private {
+ 	struct platform_device *pdev;
+ 	struct clk *clk_lcdif;
+ 	bool enabled;
++	/* one user of the LCDIF at a time: commits, fbdev and the overlay */
++	struct mutex hw_lock;
+ 
+ 	struct drm_simple_display_pipe pipe;
+ 	struct drm_connector connector;
+@@ -116,6 +122,55 @@ static const struct {
+ };
+ 
+ 
++/*
++ * Panel orientation. The ILI9805 is natively portrait (480x854) and the
++ * device tree turns it landscape with MADCTL.MV; rotation flips that in the
++ * panel controller itself, so a rotated desktop costs no CPU or PXP time.
++ *   0 = as described by the device tree (landscape on the PW-Sx series)
++ *   1 = portrait
++ *   2 = portrait, upside down
++ * The device tree property "sharp,rotation" sets it at boot; a non-zero
++ * module parameter (brain.rotation=N) overrides it.
++ */
++static unsigned int rotation;
++module_param(rotation, uint, 0644);
++MODULE_PARM_DESC(rotation, "0=landscape (DT), 1=portrait, 2=portrait inverted");
++
++/* Diagnostics, changeable at run time in /sys/module/brain/parameters */
++static bool partial = true;
++module_param(partial, bool, 0644);
++MODULE_PARM_DESC(partial, "send only the damaged rows (0 = always full frames)");
++
++static unsigned int bus_timing = 1;
++module_param(bus_timing, uint, 0644);
++MODULE_PARM_DESC(bus_timing, "LCDIF setup/hold in clock cycles (1..15)");
++
++static bool brain_rotated(void)
++{
++	return rotation == 1 || rotation == 2;
++}
++
++static void brain_panel_dims(struct device_node *np, u32 *w, u32 *h,
++			     u32 *wmm, u32 *hmm)
++{
++	u32 a = 0, b = 0, amm = 0, bmm = 0;
++
++	of_property_read_u32(np, "sharp,lcd-width", &a);
++	of_property_read_u32(np, "sharp,lcd-height", &b);
++	of_property_read_u32(np, "sharp,lcd-width-mm", &amm);
++	of_property_read_u32(np, "sharp,lcd-height-mm", &bmm);
++	if (brain_rotated()) {
++		swap(a, b);
++		swap(amm, bmm);
++	}
++	*w = a;
++	*h = b;
++	if (wmm)
++		*wmm = amm;
++	if (hmm)
++		*hmm = bmm;
++}
++
+ static struct brain_drm_private *pipe_to_private(struct drm_simple_display_pipe *pipe)
+ {
+ 	return container_of(pipe, struct brain_drm_private, pipe);
+@@ -139,6 +194,27 @@ static int brain_write_clear_poll(void __iomem *addr, u32 mask, u32 timeout)
+ 	return readl_poll_timeout(addr, reg, !(reg & mask), 0, timeout);
+ }
+ 
++/*
++ * RUN drops when the LCDIF has taken the last word, not when that word has
++ * left on the bus. Changing RS, the byte packaging or the bus mastering
++ * before the FIFOs are empty corrupts the tail of the transfer (seen as
++ * stray pixels on the panel), so wait for them to drain.
++ */
++#define STAT_LFIFO_EMPTY	(1 << 28)
++#define STAT_TXFIFO_EMPTY	(1 << 26)
++#define STAT_BUSY		(1 << 25)
++
++static int brain_wait_idle(struct brain_drm_private *priv)
++{
++	u32 reg;
++
++	return readl_poll_timeout(priv->base + LCDC_STAT, reg,
++				  (reg & (STAT_LFIFO_EMPTY | STAT_TXFIFO_EMPTY |
++					  STAT_BUSY)) ==
++				  (STAT_LFIFO_EMPTY | STAT_TXFIFO_EMPTY),
++				  0, TX_TIMEOUT);
++}
++
+ static int brain_write_byte(struct brain_drm_private *priv, u8 payload, const u8 is_data)
+ {
+ 	
+@@ -164,7 +240,7 @@ static int brain_write_byte(struct brain_drm_private *priv, u8 payload, const u8
+ 	if (brain_clear_poll(priv->base + LCDC_CTRL, CTRL_RUN, TX_TIMEOUT)) {
+ 		return -ETIMEDOUT;
+ 	}
+-	return 0;
++	return brain_wait_idle(priv);
+ }
+ 
+ static int brain_reset_block(void __iomem *reset_addr)
+@@ -267,17 +343,18 @@ static void brain_enable(struct drm_simple_display_pipe *pipe,
+ 	if (!drm_dev_enter(pipe->crtc.dev, &idx))
+ 		return;
+ 
++	mutex_lock(&ili->hw_lock);
+ 	clk_prepare_enable(ili->clk_lcdif);
+ 
+ 	ret = brain_reset_block(ili->base);
+ 	if (ret)
+-		return;
++		goto out_exit;
+ 
+ 	writel(CTRL1_FIFO_CLEAR, ili->base + LCDC_CTRL1 + REG_SET);
+ 
+ 	ret = brain_set_pixel_fmt(ili, plane_state);
+ 	if (ret)
+-		return;
++		goto out_exit;
+ 
+ 	/* Unset DOTCLK */
+ 	writel(CTRL_MASTER | CTRL_DOTCLK_MODE | CTRL_BYPASS_COUNT, ili->base + LCDC_CTRL + REG_CLR);
+@@ -321,6 +398,16 @@ static void brain_enable(struct drm_simple_display_pipe *pipe,
+ 		mac |= ILI9805_MADCTL_BGR;
+ 	}
+ 
++	/*
++	 * A quarter turn is a transpose plus ONE mirror: toggling MV alone
++	 * would show a mirrored image. MX gives one direction, MY the other
++	 * (the touch matrices of brain-rotate match these two).
++	 */
++	if (brain_rotated()) {
++		mac ^= ILI9805_MADCTL_MV;
++		mac ^= rotation == 1 ? ILI9805_MADCTL_MX : ILI9805_MADCTL_MY;
++	}
++
+ 	brain_write_byte(ili, 0x36, 0); /* Memory Access Control */
+ 	brain_write_byte(ili, mac, 1);
+ 
+@@ -354,44 +441,187 @@ static void brain_enable(struct drm_simple_display_pipe *pipe,
+ 	/* Ready to transmit */
+ 	writel(CTRL_MASTER, ili->base + LCDC_CTRL + REG_SET);
+ 	ili->enabled = true;
++
++out_exit:
++	mutex_unlock(&ili->hw_lock);
++	/* drm_dev_enter() above was never balanced: unbind hung forever */
++	drm_dev_exit(idx);
+ }
+ 
+ static void brain_disable(struct drm_simple_display_pipe *pipe)
+ {
+ 	struct brain_drm_private *ili = pipe_to_private(pipe);
+ 
++	mutex_lock(&ili->hw_lock);
++	ili->enabled = false;
+ 	clk_disable_unprepare(ili->clk_lcdif);
+-	return;
++	mutex_unlock(&ili->hw_lock);
+ }
+ 
++/*
++ * Point the panel's write window at rows [y0, y1); the column window set in
++ * brain_enable() (full width) stays as it is.
++ *
++ * Commands are written through LCDC_DATA, which the LCDIF only uses while it
++ * is NOT a bus master: with CTRL_MASTER set it would fetch the "command"
++ * from the frame buffer instead and the panel would stop accepting pixels.
++ * So drop to PIO and 8 bit packaging like brain_enable() does, then go back.
++ */
++static void brain_set_rows(struct brain_drm_private *ili, u16 y0, u16 y1)
++{
++	u32 valid = CTRL1_GET_BYTE_PACKAGING(readl(ili->base + LCDC_CTRL1));
++	u16 ye = y1 - 1;
++
++	writel(CTRL_MASTER, ili->base + LCDC_CTRL + REG_CLR);
++	writel(CTRL1_SET_BYTE_PACKAGING(0xf), ili->base + LCDC_CTRL1 + REG_CLR);
++	writel(CTRL1_SET_BYTE_PACKAGING(0x3), ili->base + LCDC_CTRL1 + REG_SET);
++
++	brain_write_byte(ili, 0x2b, 0);		/* Page Address Set */
++	brain_write_byte(ili, y0 >> 8, 1);
++	brain_write_byte(ili, y0 & 0xff, 1);
++	brain_write_byte(ili, ye >> 8, 1);
++	brain_write_byte(ili, ye & 0xff, 1);
++	brain_write_byte(ili, 0x2c, 0);		/* Memory Write */
++
++	writel(CTRL1_SET_BYTE_PACKAGING(0xf), ili->base + LCDC_CTRL1 + REG_CLR);
++	writel(CTRL1_SET_BYTE_PACKAGING(valid), ili->base + LCDC_CTRL1 + REG_SET);
++	writel(CTRL_MASTER, ili->base + LCDC_CTRL + REG_SET);
++}
++
++/*
++ * Send the damaged rows to the panel. The LCDIF has no stride support, so
++ * the update covers whole rows (contiguous in memory); typing, a clock or a
++ * cursor then move a few dozen rows instead of the full 854x480 frame.
++ */
+ static void brain_fb_dirty_full(struct brain_drm_private *ili, struct drm_framebuffer *fb, struct drm_rect *rect) {
+ 	struct drm_gem_dma_object *dma_obj = drm_fb_dma_get_gem_obj(fb, 0);
++	unsigned int cpp = fb->format->cpp[0];
+ 	int idx;
+ 
+ 	u16 width = fb->width;
+ 	u16 height = fb->height;
++	u16 y0 = 0, y1 = height;
+ 
+-	if (!ili->enabled)
+-		return;
++	u32 reg;
+ 
+ 	if (!drm_dev_enter(fb->dev, &idx))
+ 		return;
+ 
+-	if (brain_clear_poll(ili->base + LCDC_CTRL, CTRL_RUN, TX_TIMEOUT)) {
++	mutex_lock(&ili->hw_lock);
++	if (!ili->enabled)
++		goto timeout_exit;
++
++	/* a full frame takes 17 ms on the bus: sleep while it drains */
++	if (readl_poll_timeout(ili->base + LCDC_CTRL, reg, !(reg & CTRL_RUN),
++			       200, TX_TIMEOUT)) {
+ 		dev_warn(&ili->pdev->dev, "Exceeded timeout\n");
+ 		goto timeout_exit;
+ 	}
++	if (brain_wait_idle(ili)) {
++		dev_warn(&ili->pdev->dev, "FIFO not drained\n");
++		goto timeout_exit;
++	}
++
++	{
++		u32 t = clamp(bus_timing, 1u, 15u);
++
++		writel(TIMING_CMD_HOLD(t) | TIMING_CMD_SETUP(t) |
++		       TIMING_DATA_HOLD(t) | TIMING_DATA_SETUP(t),
++		       ili->base + LCDC_TIMING);
++	}
+ 
+-	writel(dma_obj->dma_addr, ili->base + LCDC_V4_CUR_BUF);
+-	writel(dma_obj->dma_addr, ili->base + LCDC_V4_NEXT_BUF);
+-	writel(TRANSFER_COUNT_SET_VCOUNT(height) | TRANSFER_COUNT_SET_HCOUNT(width),
++	if (partial && rect && fb->pitches[0] == width * cpp) {
++		y0 = clamp_t(int, rect->y1, 0, height);
++		y1 = clamp_t(int, rect->y2, 0, height);
++		/*
++		 * The LCDIF fetches the frame buffer in 16 byte bursts: a
++		 * transfer that is not a whole number of bursts leaves a few
++		 * pixels behind, which then shift the next update (stray
++		 * pixels on the panel). Round the band of rows so that its
++		 * size is a multiple of 16 bytes (4 rows at 854 pixels).
++		 */
++		if (y1 > y0) {
++			u32 align = 16 / gcd(fb->pitches[0] % 16 ?: 16, 16u);
++
++			y0 = rounddown(y0, align);
++			y1 = min_t(u32, roundup(y1, align), height);
++			if ((y1 - y0) * fb->pitches[0] % 16)
++				y0 = 0, y1 = height;
++		}
++		if (y1 <= y0) {
++			y0 = 0;
++			y1 = height;
++		}
++	}
++
++	brain_set_rows(ili, y0, y1);
++
++	writel(dma_obj->dma_addr + y0 * fb->pitches[0], ili->base + LCDC_V4_CUR_BUF);
++	writel(dma_obj->dma_addr + y0 * fb->pitches[0], ili->base + LCDC_V4_NEXT_BUF);
++	writel(TRANSFER_COUNT_SET_VCOUNT(y1 - y0) | TRANSFER_COUNT_SET_HCOUNT(width),
+ 	       ili->base + LCDC_V4_TRANSFER_COUNT);
+ 	writel(CTRL_DATA_SELECT | CTRL_RUN, ili->base + LCDC_CTRL + REG_SET);
+ 
+ timeout_exit:
++	mutex_unlock(&ili->hw_lock);
+ 	drm_dev_exit(idx);
+ }
+ 
++/*
++ * Direct rendering into the frame buffer being shown (PXP video overlay):
++ * the caller pins the buffer, lets the hardware write into it and then asks
++ * for the touched rows to be sent to the panel.
++ */
++static struct brain_drm_private *brain_lcd;
++
++int brain_lcd_scanout_get(struct brain_lcd_scanout *so)
++{
++	struct brain_drm_private *ili = brain_lcd;
++	struct drm_framebuffer *fb = NULL;
++	struct drm_plane *plane;
++
++	if (!ili)
++		return -ENODEV;
++	plane = &ili->pipe.plane;
++
++	drm_modeset_lock(&plane->mutex, NULL);
++	if (plane->state && plane->state->fb && ili->enabled) {
++		fb = plane->state->fb;
++		drm_framebuffer_get(fb);
++	}
++	drm_modeset_unlock(&plane->mutex);
++	if (!fb)
++		return -ENODEV;
++	if (fb->format->format != DRM_FORMAT_RGB565) {
++		drm_framebuffer_put(fb);
++		return -EINVAL;
++	}
++
++	so->dma = drm_fb_dma_get_gem_obj(fb, 0)->dma_addr + fb->offsets[0];
++	so->width = fb->width;
++	so->height = fb->height;
++	so->pitch = fb->pitches[0];
++	so->fb = fb;
++	return 0;
++}
++EXPORT_SYMBOL_GPL(brain_lcd_scanout_get);
++
++void brain_lcd_scanout_put(struct brain_lcd_scanout *so, u32 y0, u32 y1)
++{
++	struct drm_framebuffer *fb = so->fb;
++	struct brain_drm_private *ili = brain_lcd;
++
++	if (ili && y1 > y0) {
++		struct drm_rect rect = {
++			.x1 = 0, .y1 = y0, .x2 = fb->width, .y2 = y1,
++		};
++
++		brain_fb_dirty_full(ili, fb, &rect);
++	}
++	drm_framebuffer_put(fb);
++}
++EXPORT_SYMBOL_GPL(brain_lcd_scanout_put);
++
+ static void brain_update(struct drm_simple_display_pipe *pipe,
+ 			  struct drm_plane_state *old_state)
+ {
+@@ -429,10 +659,7 @@ static int brain_connector_get_modes(struct drm_connector *connector)
+ 
+ 	ili = connector_to_private(connector);
+ 
+-	of_property_read_u32(ili->pdev->dev.of_node, "sharp,lcd-width", &hd);
+-	of_property_read_u32(ili->pdev->dev.of_node, "sharp,lcd-height", &vd);
+-	of_property_read_u32(ili->pdev->dev.of_node, "sharp,lcd-width-mm", &hd_mm);
+-	of_property_read_u32(ili->pdev->dev.of_node, "sharp,lcd-height-mm", &vd_mm);
++	brain_panel_dims(ili->pdev->dev.of_node, &hd, &vd, &hd_mm, &vd_mm);
+ 
+ 	// Equivalent to DRM_SIMPLE_MODE macro
+ 	modei.type = DRM_MODE_TYPE_DRIVER;
+@@ -536,6 +763,7 @@ static int brain_probe(struct platform_device *pdev)
+ 	}
+ 
+ 	ili->pdev = pdev;
++	mutex_init(&ili->hw_lock);
+ 	drm->dev_private = ili;
+ 
+ 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
+@@ -558,16 +786,21 @@ static int brain_probe(struct platform_device *pdev)
+ 
+ 	for (i = 0; i < gpiod_count(&pdev->dev, "sharp,en"); i++) {
+ 		en = devm_gpiod_get_index(&pdev->dev, "sharp,en", i, GPIOD_OUT_HIGH);
+-		if (IS_ERR(en))
++		if (IS_ERR(en)) {
+ 			dev_err(&pdev->dev, "failed to get gpio %d\n", i);
+ 			continue;
++		}
+ 		ret = gpiod_direction_output(en, 1);
+-		if (IS_ERR(en))
++		if (ret)
+ 			dev_err(&pdev->dev, "failed to output gpio %d\n", i);
+ 	}
+ 	
+-	of_property_read_u32(ili->pdev->dev.of_node, "sharp,lcd-width", &width);
+-	of_property_read_u32(ili->pdev->dev.of_node, "sharp,lcd-height", &height);
++	if (!rotation)
++		of_property_read_u32(pdev->dev.of_node, "sharp,rotation", &rotation);
++	brain_panel_dims(ili->pdev->dev.of_node, &width, &height, NULL, NULL);
++	if (brain_rotated())
++		dev_info(&pdev->dev, "panel rotated (%u): %ux%u\n",
++			 rotation, width, height);
+ 
+ 	drm->mode_config.min_width = width;
+ 	drm->mode_config.max_width = width;
+@@ -589,6 +822,7 @@ static int brain_probe(struct platform_device *pdev)
+ 		return ret;
+ 	}
+ 
++	drm_plane_enable_fb_damage_clips(&ili->pipe.plane);
+ 	drm_mode_config_reset(drm);
+ 
+ 	ret = drm_dev_register(drm, 0);
+@@ -599,6 +833,7 @@ static int brain_probe(struct platform_device *pdev)
+ 
+ 	platform_set_drvdata(pdev, drm);
+ 	drm_fbdev_generic_setup(drm, 16);
++	brain_lcd = ili;
+ 	return 0;
+ }
+ 
+@@ -606,8 +841,11 @@ static int brain_remove(struct platform_device *pdev)
+ {
+ 	struct drm_device *drm = platform_get_drvdata(pdev);
+ 
++	brain_lcd = NULL;
+ 	drm_dev_unplug(drm);
+ 	drm_atomic_helper_shutdown(drm);
++	/* release the device so a rebind (rotation change) gets card0 again */
++	drm_dev_put(drm);
+ 
+ 	return 0;
+ }
+diff --git a/drivers/misc/Kconfig b/drivers/misc/Kconfig
+index 0cef98319..86772711c 100644
+--- a/drivers/misc/Kconfig
++++ b/drivers/misc/Kconfig
+@@ -50,6 +50,16 @@ config AD525X_DPOT_SPI
+ 	  To compile this driver as a module, choose M here: the
+ 	  module will be called ad525x_dpot-spi.
+ 
++config BRAIN_PXP
++	tristate "i.MX28 PXP (Pixel Pipeline) for SHARP Brain"
++	depends on ARCH_MXS || COMPILE_TEST
++	depends on DMA_SHARED_BUFFER
++	select STMP_DEVICE
++	help
++	  Character device /dev/pxp that drives the i.MX28 Pixel Pipeline
++	  version 2: scaling of YUV sources, rotation, flips and colour
++	  conversion between memory buffers or DRM dumb buffers (dma-buf).
++
+ config DUMMY_IRQ
+ 	tristate "Dummy IRQ handler"
+ 	help
+diff --git a/drivers/misc/Makefile b/drivers/misc/Makefile
+index ac9b3e757..41f8a866f 100644
+--- a/drivers/misc/Makefile
++++ b/drivers/misc/Makefile
+@@ -9,6 +9,7 @@ obj-$(CONFIG_AD525X_DPOT)	+= ad525x_dpot.o
+ obj-$(CONFIG_AD525X_DPOT_I2C)	+= ad525x_dpot-i2c.o
+ obj-$(CONFIG_AD525X_DPOT_SPI)	+= ad525x_dpot-spi.o
+ obj-$(CONFIG_ATMEL_SSC)		+= atmel-ssc.o
++obj-$(CONFIG_BRAIN_PXP)	+= brain_pxp.o
+ obj-$(CONFIG_DUMMY_IRQ)		+= dummy-irq.o
+ obj-$(CONFIG_ICS932S401)	+= ics932s401.o
+ obj-$(CONFIG_LKDTM)		+= lkdtm/
+diff --git a/drivers/misc/brain_pxp.c b/drivers/misc/brain_pxp.c
+new file mode 100644
+index 000000000..c927e27c1
+--- /dev/null
++++ b/drivers/misc/brain_pxp.c
+@@ -0,0 +1,830 @@
++// SPDX-License-Identifier: GPL-2.0
++/*
++ * brain-pxp: driver minimale per il PXP (Pixel Pipeline) v2 dell'i.MX28,
++ * pensato per i dizionari SHARP Brain con Brainux.
++ *
++ * Si lega al nodo "fsl,imx28-pxp" del device tree. Espone /dev/pxp con:
++ *   - buffer DMA contigui (write-combine) mappabili con mmap()
++ *   - un ioctl che programma il PXP, lo avvia e attende l'interrupt
++ *
++ * Registri presi dal BSP Freescale 2.6.35 per i.MX28 (regs-pxp.h).
++ */
++
++#include <linux/atomic.h>
++#include <linux/brain_lcd.h>
++#include <linux/completion.h>
++#include <linux/delay.h>
++#include <linux/dma-buf.h>
++#include <linux/dma-mapping.h>
++#include <linux/fs.h>
++#include <linux/interrupt.h>
++#include <linux/io.h>
++#include <linux/ktime.h>
++#include <linux/miscdevice.h>
++#include <linux/mm.h>
++#include <linux/module.h>
++#include <linux/mutex.h>
++#include <linux/of.h>
++#include <linux/platform_device.h>
++#include <linux/slab.h>
++#include <linux/stmp_device.h>
++#include <linux/uaccess.h>
++
++#include <uapi/misc/brain_pxp.h>
++
++#define DRV_NAME		"brain-pxp"
++
++/* Registri (offset dalla base 0x8002a000) */
++#define HW_PXP_CTRL		0x000
++#define HW_PXP_CTRL_SET		0x004
++#define HW_PXP_CTRL_CLR		0x008
++#define HW_PXP_STAT		0x010
++#define HW_PXP_STAT_CLR		0x018
++#define HW_PXP_OUTBUF		0x020
++#define HW_PXP_OUTBUF2		0x030
++#define HW_PXP_OUTSIZE		0x040
++#define HW_PXP_S0BUF		0x050
++#define HW_PXP_S0UBUF		0x060
++#define HW_PXP_S0VBUF		0x070
++#define HW_PXP_S0PARAM		0x080
++#define HW_PXP_S0BACKGROUND	0x090
++#define HW_PXP_S0CROP		0x0a0
++#define HW_PXP_S0SCALE		0x0b0
++#define HW_PXP_S0OFFSET		0x0c0
++#define HW_PXP_CSCCOEFF0	0x0d0
++#define HW_PXP_CSCCOEFF1	0x0e0
++#define HW_PXP_CSCCOEFF2	0x0f0
++#define HW_PXP_S0COLORKEYLOW	0x180
++#define HW_PXP_S0COLORKEYHIGH	0x190
++#define HW_PXP_OLCOLORKEYLOW	0x1a0
++#define HW_PXP_OLCOLORKEYHIGH	0x1b0
++#define HW_PXP_VERSION		0x1f0
++#define HW_PXP_OLnPARAM(n)	(0x220 + (n) * 0x40)
++#define PXP_NUM_OVERLAYS	8
++
++/* Campi di HW_PXP_CTRL */
++#define CTRL_SFTRST		BIT(31)
++#define CTRL_CLKGATE		BIT(30)
++#define CTRL_CROP		BIT(19)
++#define CTRL_SCALE		BIT(18)
++#define CTRL_S0_FORMAT(v)	(((v) & 0xf) << 12)
++#define CTRL_VFLIP		BIT(11)
++#define CTRL_HFLIP		BIT(10)
++#define CTRL_ROTATE(v)		(((v) & 0x3) << 8)
++#define CTRL_OUTBUF_FORMAT(v)	(((v) & 0xf) << 4)
++#define CTRL_LCD_HANDSHAKE	BIT(3)
++#define CTRL_NEXT_IRQ_ENABLE	BIT(2)
++#define CTRL_IRQ_ENABLE		BIT(1)
++#define CTRL_ENABLE		BIT(0)
++
++/* Campi di HW_PXP_STAT */
++#define STAT_NEXT_IRQ		BIT(3)
++#define STAT_AXI_READ_ERROR	BIT(2)
++#define STAT_AXI_WRITE_ERROR	BIT(1)
++#define STAT_IRQ		BIT(0)
++#define STAT_ALL_IRQS		(STAT_NEXT_IRQ | STAT_AXI_READ_ERROR | \
++				 STAT_AXI_WRITE_ERROR | STAT_IRQ)
++
++/* Campi a blocchi 8x8: XBASE[31:24] YBASE[23:16] WIDTH[15:8] HEIGHT[7:0] */
++#define BLK(xb, yb, w, h)	((((xb) & 0xff) << 24) | (((yb) & 0xff) << 16) | \
++				 (((w) & 0xff) << 8) | ((h) & 0xff))
++#define OUTSIZE(a, w, h)	((((a) & 0xff) << 24) | (((w) & 0xfff) << 12) | \
++				 ((h) & 0xfff))
++
++#define SCALE_ONE		0x1000	/* 1.0 in virgola fissa 4.12 */
++#define SCALE_MAX		0x4000	/* riduzione massima 1/4 */
++#define MAX_BLOCKS		255	/* i campi a blocchi sono da 8 bit */
++
++struct pxp_buf {
++	void *vaddr;			/* solo per i buffer allocati qui */
++	dma_addr_t dma;
++	size_t size;
++	atomic_t maps;			/* VMA che mappano ancora il buffer */
++	/* buffer importati da un dma-buf */
++	struct dma_buf *dmabuf;
++	struct dma_buf_attachment *attach;
++	struct sg_table *sgt;
++};
++
++static bool buf_in_use(const struct pxp_buf *b)
++{
++	return b->vaddr || b->dmabuf;
++}
++
++struct pxp_file {
++	struct pxp_buf bufs[PXP_MAX_BUFFERS];
++	struct mutex lock;	/* protegge bufs */
++};
++
++struct brain_pxp {
++	void __iomem *base;
++	int irq;
++	struct platform_device *pdev;	/* solo per le allocazioni DMA */
++	struct miscdevice misc;
++	struct mutex hw_lock;		/* un lavoro alla volta */
++	struct completion done;
++	u32 last_stat;
++	u32 irq_count;
++	u32 jobs_done;
++	u32 jobs_timeout;
++};
++
++static struct brain_pxp *pxp_dev;
++
++static inline u32 pxp_read(struct brain_pxp *pxp, u32 reg)
++{
++	return readl(pxp->base + reg);
++}
++
++static inline void pxp_write(struct brain_pxp *pxp, u32 val, u32 reg)
++{
++	writel(val, pxp->base + reg);
++}
++
++static irqreturn_t pxp_irq(int irq, void *data)
++{
++	struct brain_pxp *pxp = data;
++	u32 stat = pxp_read(pxp, HW_PXP_STAT);
++
++	if (!(stat & STAT_ALL_IRQS))
++		return IRQ_NONE;
++
++	pxp_write(pxp, stat & STAT_ALL_IRQS, HW_PXP_STAT_CLR);
++	pxp->last_stat = stat;
++	pxp->irq_count++;
++	complete(&pxp->done);
++	return IRQ_HANDLED;
++}
++
++static int pxp_reset(struct brain_pxp *pxp)
++{
++	int ret = stmp_reset_block(pxp->base + HW_PXP_CTRL);
++
++	if (ret)
++		dev_err(pxp->misc.this_device, "reset del PXP fallito: %d\n", ret);
++	return ret;
++}
++
++/* ---- formati ---------------------------------------------------------- */
++
++static bool s0_is_yuv(u32 fmt)
++{
++	return fmt >= PXP_S0_YUV422 && fmt <= PXP_S0_VYUY;
++}
++
++static bool s0_is_planar(u32 fmt)
++{
++	return fmt == PXP_S0_YUV422 || fmt == PXP_S0_YUV420;
++}
++
++/* Byte necessari per un'immagine sorgente w x h; 0 = formato non valido */
++static u64 s0_bytes(u32 fmt, u32 w, u32 h)
++{
++	u64 px = (u64)w * h;
++
++	switch (fmt) {
++	case PXP_S0_ARGB8888:
++	case PXP_S0_RGB888:
++		return px * 4;
++	case PXP_S0_RGB565:
++	case PXP_S0_RGB555:
++	case PXP_S0_UYVY:
++	case PXP_S0_VYUY:
++	case PXP_S0_YUV422:
++		return px * 2;
++	case PXP_S0_YUV420:
++		return px * 3 / 2;
++	default:
++		return 0;
++	}
++}
++
++static u64 out_bytes(u32 fmt, u32 w, u32 h)
++{
++	u64 px = (u64)w * h;
++
++	switch (fmt) {
++	case PXP_OUT_ARGB8888:
++	case PXP_OUT_RGB888:
++	case PXP_OUT_YUV444:
++		return px * 4;
++	case PXP_OUT_RGB888P:
++		return px * 3;
++	case PXP_OUT_ARGB1555:
++	case PXP_OUT_RGB565:
++	case PXP_OUT_RGB555:
++	case PXP_OUT_UYVY:
++	case PXP_OUT_VYUY:
++		return px * 2;
++	default:
++		return 0;
++	}
++}
++
++/* ---- buffer ----------------------------------------------------------- */
++
++static int pxp_ioc_alloc(struct pxp_file *pf, struct pxp_alloc __user *uarg)
++{
++	struct pxp_alloc a;
++	struct device *dev = &pxp_dev->pdev->dev;
++	int i, ret = -ENOSPC;
++
++	if (copy_from_user(&a, uarg, sizeof(a)))
++		return -EFAULT;
++	if (!a.size || a.size > SZ_4M)
++		return -EINVAL;
++
++	mutex_lock(&pf->lock);
++	for (i = 0; i < PXP_MAX_BUFFERS; i++) {
++		struct pxp_buf *b = &pf->bufs[i];
++
++		if (buf_in_use(b))
++			continue;
++		b->size = PAGE_ALIGN(a.size);
++		b->vaddr = dma_alloc_wc(dev, b->size, &b->dma, GFP_KERNEL);
++		if (!b->vaddr) {
++			ret = -ENOMEM;
++			break;
++		}
++		a.index = i;
++		a.size = b->size;
++		/* ogni buffer ha la sua finestra da 16 MB nello spazio di mmap */
++		a.mmap_offset = (u64)i << 24;
++		ret = 0;
++		break;
++	}
++	mutex_unlock(&pf->lock);
++
++	if (!ret && copy_to_user(uarg, &a, sizeof(a)))
++		return -EFAULT;
++	return ret;
++}
++
++static void pxp_free_buf(struct pxp_buf *b)
++{
++	if (b->dmabuf) {
++		dma_buf_unmap_attachment(b->attach, b->sgt, DMA_BIDIRECTIONAL);
++		dma_buf_detach(b->dmabuf, b->attach);
++		dma_buf_put(b->dmabuf);
++	} else if (b->vaddr) {
++		dma_free_wc(&pxp_dev->pdev->dev, b->size, b->vaddr, b->dma);
++	}
++	memset(b, 0, sizeof(*b));
++}
++
++static int pxp_ioc_import(struct pxp_file *pf, struct pxp_import __user *uarg)
++{
++	struct device *dev = &pxp_dev->pdev->dev;
++	struct pxp_import imp;
++	struct dma_buf *dmabuf;
++	struct dma_buf_attachment *attach;
++	struct sg_table *sgt;
++	int i, ret;
++
++	if (copy_from_user(&imp, uarg, sizeof(imp)))
++		return -EFAULT;
++
++	dmabuf = dma_buf_get(imp.fd);
++	if (IS_ERR(dmabuf))
++		return PTR_ERR(dmabuf);
++
++	attach = dma_buf_attach(dmabuf, dev);
++	if (IS_ERR(attach)) {
++		ret = PTR_ERR(attach);
++		goto err_put;
++	}
++
++	sgt = dma_buf_map_attachment(attach, DMA_BIDIRECTIONAL);
++	if (IS_ERR(sgt)) {
++		ret = PTR_ERR(sgt);
++		goto err_detach;
++	}
++
++	/* il PXP non ha MMU: serve memoria fisicamente contigua */
++	if (sgt->nents != 1) {
++		dev_warn(pxp_dev->misc.this_device,
++			 "dma-buf non contiguo (%u segmenti)\n", sgt->nents);
++		ret = -EINVAL;
++		goto err_unmap;
++	}
++
++	mutex_lock(&pf->lock);
++	ret = -ENOSPC;
++	for (i = 0; i < PXP_MAX_BUFFERS; i++) {
++		struct pxp_buf *b = &pf->bufs[i];
++
++		if (buf_in_use(b))
++			continue;
++		b->dmabuf = dmabuf;
++		b->attach = attach;
++		b->sgt = sgt;
++		b->dma = sg_dma_address(sgt->sgl);
++		b->size = dmabuf->size;
++		imp.index = i;
++		imp.size = b->size;
++		ret = 0;
++		break;
++	}
++	mutex_unlock(&pf->lock);
++	if (ret)
++		goto err_unmap;
++
++	return copy_to_user(uarg, &imp, sizeof(imp)) ? -EFAULT : 0;
++
++err_unmap:
++	dma_buf_unmap_attachment(attach, sgt, DMA_BIDIRECTIONAL);
++err_detach:
++	dma_buf_detach(dmabuf, attach);
++err_put:
++	dma_buf_put(dmabuf);
++	return ret;
++}
++
++static int pxp_ioc_free(struct pxp_file *pf, u32 __user *uarg)
++{
++	u32 idx;
++	int ret = 0;
++
++	if (get_user(idx, uarg))
++		return -EFAULT;
++	if (idx >= PXP_MAX_BUFFERS)
++		return -EINVAL;
++	/*
++	 * pf->lock esclude sia un lavoro in corso (pxp_ioc_run lo tiene fino
++	 * alla fine, attesa dell'interrupt compresa) sia un mmap() concorrente.
++	 * Un buffer ancora mappato non si libera: dma_mmap_wc() non prende
++	 * riferimenti alle pagine, il processo continuerebbe a scrivere in
++	 * memoria gia' restituita al kernel.
++	 */
++	mutex_lock(&pf->lock);
++	if (atomic_read(&pf->bufs[idx].maps))
++		ret = -EBUSY;
++	else
++		pxp_free_buf(&pf->bufs[idx]);
++	mutex_unlock(&pf->lock);
++	return ret;
++}
++
++/*
++ * Conta le VMA per buffer (anche quelle nate da fork() o da una divisione
++ * della mappatura). vm_private_data punta dentro pxp_file, che vive fino a
++ * release(): ogni VMA tiene un riferimento al file.
++ */
++static void pxp_vm_open(struct vm_area_struct *vma)
++{
++	struct pxp_buf *b = vma->vm_private_data;
++
++	atomic_inc(&b->maps);
++}
++
++static void pxp_vm_close(struct vm_area_struct *vma)
++{
++	struct pxp_buf *b = vma->vm_private_data;
++
++	atomic_dec(&b->maps);
++}
++
++static const struct vm_operations_struct pxp_vm_ops = {
++	.open	= pxp_vm_open,
++	.close	= pxp_vm_close,
++};
++
++static int pxp_mmap(struct file *file, struct vm_area_struct *vma)
++{
++	struct pxp_file *pf = file->private_data;
++	unsigned long idx = vma->vm_pgoff >> (24 - PAGE_SHIFT);
++	unsigned long len = vma->vm_end - vma->vm_start;
++	struct pxp_buf *b;
++	int ret;
++
++	if (idx >= PXP_MAX_BUFFERS || (vma->vm_pgoff & ((SZ_16M >> PAGE_SHIFT) - 1)))
++		return -EINVAL;
++
++	mutex_lock(&pf->lock);
++	b = &pf->bufs[idx];
++	if (!b->vaddr || len > b->size) {
++		mutex_unlock(&pf->lock);
++		return -EINVAL;
++	}
++	vma->vm_pgoff = 0;
++	ret = dma_mmap_wc(&pxp_dev->pdev->dev, vma, b->vaddr, b->dma, len);
++	if (!ret) {
++		vma->vm_private_data = b;
++		vma->vm_ops = &pxp_vm_ops;
++		atomic_inc(&b->maps);
++	}
++	mutex_unlock(&pf->lock);
++	return ret;
++}
++
++/* ---- esecuzione di un lavoro ------------------------------------------ */
++
++static int check_blk(u32 v)
++{
++	return (v & 7) || (v >> 3) > MAX_BLOCKS;
++}
++
++static int pxp_ioc_run(struct pxp_file *pf, struct pxp_job __user *uarg)
++{
++	struct brain_pxp *pxp = pxp_dev;
++	struct pxp_job j;
++	struct pxp_buf *s0, *out = NULL;
++	struct brain_lcd_scanout so = {};
++	bool to_screen;
++	dma_addr_t out_dma;
++	u32 ctrl, xscale = SCALE_ONE, yscale = SCALE_ONE;
++	u32 osize_w, osize_h, rot;
++	dma_addr_t y, u = 0, v = 0;
++	unsigned long tmo;
++	ktime_t t0;
++	long left;
++	int i, ret;
++
++	if (copy_from_user(&j, uarg, sizeof(j)))
++		return -EFAULT;
++
++	to_screen = j.out_index == PXP_BUF_SCREEN;
++	if (j.s0_index >= PXP_MAX_BUFFERS ||
++	    (!to_screen && j.out_index >= PXP_MAX_BUFFERS))
++		return -EINVAL;
++	if (j.reserved[0] || j.reserved[1] || j.reserved[2])
++		return -EINVAL;
++	if (j.rotate % 90 || j.rotate > 270)
++		return -EINVAL;
++	rot = j.rotate / 90;
++	/* lo schermo e' RGB565 e lo ruota il pannello, non il PXP */
++	if (to_screen && (rot || j.out_format != PXP_OUT_RGB565))
++		return -EINVAL;
++
++	if (!j.dst_w)
++		j.dst_w = (rot & 1) ? j.out_height : j.out_width;
++	if (!j.dst_h)
++		j.dst_h = (rot & 1) ? j.out_width : j.out_height;
++	if (!j.src_w)
++		j.src_w = j.dst_w;
++	if (!j.src_h)
++		j.src_h = j.dst_h;
++
++	/* tutto a multipli di 8 e dentro i campi a 8 bit del PXP */
++	if (check_blk(j.s0_width) || check_blk(j.s0_height) ||
++	    check_blk(j.src_x) || check_blk(j.src_y) ||
++	    check_blk(j.dst_x) || check_blk(j.dst_y) ||
++	    check_blk(j.dst_w) || check_blk(j.dst_h) ||
++	    !j.s0_width || !j.s0_height || !j.dst_w || !j.dst_h ||
++	    !j.out_width || !j.out_height ||
++	    j.out_width > 0xfff || j.out_height > 0xfff)
++		return -EINVAL;
++
++	/* il ritaglio deve stare dentro la sorgente */
++	if ((u64)j.src_x + j.src_w > j.s0_width ||
++	    (u64)j.src_y + j.src_h > j.s0_height)
++		return -EINVAL;
++
++	/* coordinate di uscita prima della rotazione */
++	osize_w = (rot & 1) ? j.out_height : j.out_width;
++	osize_h = (rot & 1) ? j.out_width : j.out_height;
++	if ((u64)j.dst_x + j.dst_w > osize_w || (u64)j.dst_y + j.dst_h > osize_h)
++		return -EINVAL;
++
++	if (j.src_w != j.dst_w || j.src_h != j.dst_h) {
++		/* sull'i.MX28 lo scaler funziona solo con sorgenti YUV */
++		if (!s0_is_yuv(j.s0_format))
++			return -EINVAL;
++		xscale = j.src_w * SCALE_ONE / j.dst_w;
++		yscale = j.src_h * SCALE_ONE / j.dst_h;
++		if (xscale > SCALE_MAX || yscale > SCALE_MAX)
++			return -ERANGE;
++		/*
++		 * Il PXP ritaglia dopo lo scaler e S0CROP ha larghezza e
++		 * altezza in pixel di uscita: non e' verificato se l'origine
++		 * sia in coordinate sorgente (come controllato sopra) o
++		 * scalate. Nel secondo caso, riducendo, la lettura andrebbe
++		 * fino a 4 volte oltre il punto controllato, fuori dal
++		 * buffer. Con l'origine a zero le due letture coincidono e
++		 * il ritaglio resta dentro la sorgente: con lo scaler attivo
++		 * si accetta solo quella.
++		 */
++		if (j.src_x || j.src_y)
++			return -EINVAL;
++	}
++
++	mutex_lock(&pf->lock);
++	s0 = &pf->bufs[j.s0_index];
++	ret = -EINVAL;
++	if (!buf_in_use(s0))
++		goto out_unlock_file;
++	if (!s0_bytes(j.s0_format, j.s0_width, j.s0_height) ||
++	    s0_bytes(j.s0_format, j.s0_width, j.s0_height) > s0->size)
++		goto out_unlock_file;
++	if (!out_bytes(j.out_format, j.out_width, j.out_height))
++		goto out_unlock_file;
++
++	if (to_screen) {
++		/* overlay: righe intere del frame buffer mostrato dal pannello */
++		ret = brain_lcd_scanout_get(&so);
++		if (ret)
++			goto out_unlock_file;
++		ret = -EINVAL;
++		if (j.out_width != so.width || so.pitch != so.width * 2 ||
++		    (u64)j.out_y + j.out_height > so.height)
++			goto out_put_screen;
++		out_dma = so.dma + j.out_y * so.pitch;
++	} else {
++		u64 rows = (u64)j.out_y + j.out_height;
++
++		out = &pf->bufs[j.out_index];
++		if (!buf_in_use(out) || rows > 0xffff ||
++		    out_bytes(j.out_format, j.out_width, rows) > out->size)
++			goto out_unlock_file;
++		out_dma = out->dma + out_bytes(j.out_format, j.out_width,
++					       j.out_y);
++	}
++
++	y = s0->dma;
++	if (s0_is_planar(j.s0_format)) {
++		u32 px = j.s0_width * j.s0_height;
++
++		u = y + px;
++		v = u + (j.s0_format == PXP_S0_YUV420 ? px / 4 : px / 2);
++	}
++
++	mutex_lock(&pxp->hw_lock);
++
++	ret = pxp_reset(pxp);
++	if (ret)
++		goto out_unlock_hw;
++
++	pxp_write(pxp, out_dma, HW_PXP_OUTBUF);
++	pxp_write(pxp, 0, HW_PXP_OUTBUF2);
++	pxp_write(pxp, OUTSIZE(0xff, osize_w, osize_h), HW_PXP_OUTSIZE);
++
++	pxp_write(pxp, y, HW_PXP_S0BUF);
++	pxp_write(pxp, u, HW_PXP_S0UBUF);
++	pxp_write(pxp, v, HW_PXP_S0VBUF);
++	pxp_write(pxp, BLK(j.dst_x >> 3, j.dst_y >> 3,
++			   j.s0_width >> 3, j.s0_height >> 3), HW_PXP_S0PARAM);
++	pxp_write(pxp, BLK(j.src_x >> 3, j.src_y >> 3,
++			   j.dst_w >> 3, j.dst_h >> 3), HW_PXP_S0CROP);
++	pxp_write(pxp, (yscale << 16) | xscale, HW_PXP_S0SCALE);
++	pxp_write(pxp, 0, HW_PXP_S0OFFSET);
++	pxp_write(pxp, j.background, HW_PXP_S0BACKGROUND);
++
++	/* color key disattivati (low > high) */
++	pxp_write(pxp, 0xffffff, HW_PXP_S0COLORKEYLOW);
++	pxp_write(pxp, 0, HW_PXP_S0COLORKEYHIGH);
++	pxp_write(pxp, 0xffffff, HW_PXP_OLCOLORKEYLOW);
++	pxp_write(pxp, 0, HW_PXP_OLCOLORKEYHIGH);
++
++	/* nessun overlay */
++	for (i = 0; i < PXP_NUM_OVERLAYS; i++)
++		pxp_write(pxp, 0, HW_PXP_OLnPARAM(i));
++
++	/* conversione colore, valori del BSP Freescale */
++	if (j.flags & PXP_FLAG_YUV_FULL) {
++		pxp_write(pxp, 0x04030000, HW_PXP_CSCCOEFF0);
++		pxp_write(pxp, 0x01230208, HW_PXP_CSCCOEFF1);
++		pxp_write(pxp, 0x076b079b, HW_PXP_CSCCOEFF2);
++	} else {
++		pxp_write(pxp, 0x84ab01f0, HW_PXP_CSCCOEFF0);
++		pxp_write(pxp, 0x01230204, HW_PXP_CSCCOEFF1);
++		pxp_write(pxp, 0x0730079c, HW_PXP_CSCCOEFF2);
++	}
++
++	ctrl = CTRL_S0_FORMAT(j.s0_format) | CTRL_OUTBUF_FORMAT(j.out_format) |
++	       CTRL_ROTATE(rot) | CTRL_CROP | CTRL_IRQ_ENABLE;
++	if (xscale != SCALE_ONE || yscale != SCALE_ONE)
++		ctrl |= CTRL_SCALE;
++	if (j.flags & PXP_FLAG_HFLIP)
++		ctrl |= CTRL_HFLIP;
++	if (j.flags & PXP_FLAG_VFLIP)
++		ctrl |= CTRL_VFLIP;
++
++	pxp_write(pxp, STAT_ALL_IRQS, HW_PXP_STAT_CLR);
++	reinit_completion(&pxp->done);
++	pxp->last_stat = 0;
++
++	/* le scritture nei buffer write-combine devono arrivare in RAM */
++	wmb();
++
++	t0 = ktime_get();
++	pxp_write(pxp, ctrl, HW_PXP_CTRL);
++	pxp_write(pxp, ctrl | CTRL_ENABLE, HW_PXP_CTRL);
++
++	tmo = msecs_to_jiffies(j.timeout_ms ? j.timeout_ms : 1000);
++	left = wait_for_completion_interruptible_timeout(&pxp->done, tmo);
++	j.elapsed_us = ktime_us_delta(ktime_get(), t0);
++
++	if (left <= 0) {
++		j.stat = pxp_read(pxp, HW_PXP_STAT);
++		pxp->jobs_timeout++;
++		dev_warn(pxp->misc.this_device,
++			 "lavoro non completato: ctrl=%08x stat=%08x\n",
++			 pxp_read(pxp, HW_PXP_CTRL), j.stat);
++		pxp_reset(pxp);
++		ret = left ? (int)left : -ETIMEDOUT;
++	} else {
++		j.stat = pxp->last_stat;
++		pxp->jobs_done++;
++		ret = (j.stat & (STAT_AXI_READ_ERROR | STAT_AXI_WRITE_ERROR)) ?
++		      -EIO : 0;
++	}
++
++out_unlock_hw:
++	mutex_unlock(&pxp->hw_lock);
++out_put_screen:
++	/* a lavoro riuscito le righe scritte vanno subito al pannello */
++	if (to_screen)
++		brain_lcd_scanout_put(&so, j.out_y,
++				      ret ? j.out_y : j.out_y + j.out_height);
++out_unlock_file:
++	mutex_unlock(&pf->lock);
++
++	if (copy_to_user(uarg, &j, sizeof(j)))
++		return -EFAULT;
++	return ret;
++}
++
++static int pxp_ioc_info(struct pxp_info __user *uarg)
++{
++	struct brain_pxp *pxp = pxp_dev;
++	struct pxp_info info = {
++		.version = pxp_read(pxp, HW_PXP_VERSION),
++		.ctrl = pxp_read(pxp, HW_PXP_CTRL),
++		.stat = pxp_read(pxp, HW_PXP_STAT),
++		.irq_count = pxp->irq_count,
++		.jobs_done = pxp->jobs_done,
++		.jobs_timeout = pxp->jobs_timeout,
++	};
++
++	return copy_to_user(uarg, &info, sizeof(info)) ? -EFAULT : 0;
++}
++
++static int pxp_ioc_screen(struct pxp_screen __user *uarg)
++{
++	struct brain_lcd_scanout so;
++	struct pxp_screen scr;
++	int ret = brain_lcd_scanout_get(&so);
++
++	if (ret)
++		return ret;
++	scr.width = so.width;
++	scr.height = so.height;
++	scr.pitch = so.pitch;
++	scr.format = PXP_OUT_RGB565;
++	brain_lcd_scanout_put(&so, 0, 0);
++	return copy_to_user(uarg, &scr, sizeof(scr)) ? -EFAULT : 0;
++}
++
++static long pxp_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
++{
++	struct pxp_file *pf = file->private_data;
++	void __user *uarg = (void __user *)arg;
++
++	switch (cmd) {
++	case PXP_IOC_ALLOC:
++		return pxp_ioc_alloc(pf, uarg);
++	case PXP_IOC_FREE:
++		return pxp_ioc_free(pf, uarg);
++	case PXP_IOC_RUN:
++		return pxp_ioc_run(pf, uarg);
++	case PXP_IOC_INFO:
++		return pxp_ioc_info(uarg);
++	case PXP_IOC_IMPORT:
++		return pxp_ioc_import(pf, uarg);
++	case PXP_IOC_SCREEN:
++		return pxp_ioc_screen(uarg);
++	default:
++		return -ENOTTY;
++	}
++}
++
++static int pxp_open(struct inode *inode, struct file *file)
++{
++	struct pxp_file *pf = kzalloc(sizeof(*pf), GFP_KERNEL);
++
++	if (!pf)
++		return -ENOMEM;
++	mutex_init(&pf->lock);
++	file->private_data = pf;
++	return 0;
++}
++
++static int pxp_release(struct inode *inode, struct file *file)
++{
++	struct pxp_file *pf = file->private_data;
++	int i;
++
++	/*
++	 * Qui non possono esserci mappature: ogni VMA tiene un riferimento
++	 * al file e release() arriva solo dopo l'ultimo munmap().
++	 */
++	for (i = 0; i < PXP_MAX_BUFFERS; i++) {
++		WARN_ON(atomic_read(&pf->bufs[i].maps));
++		pxp_free_buf(&pf->bufs[i]);
++	}
++	kfree(pf);
++	return 0;
++}
++
++static const struct file_operations pxp_fops = {
++	.owner		= THIS_MODULE,
++	.open		= pxp_open,
++	.release	= pxp_release,
++	.unlocked_ioctl	= pxp_ioctl,
++	.mmap		= pxp_mmap,
++};
++
++/* ---- driver di piattaforma ------------------------------------------ */
++
++static int brain_pxp_probe(struct platform_device *pdev)
++{
++	struct device *dev = &pdev->dev;
++	struct brain_pxp *pxp;
++	u32 version;
++	int ret;
++
++	if (pxp_dev)
++		return -EBUSY;
++
++	pxp = devm_kzalloc(dev, sizeof(*pxp), GFP_KERNEL);
++	if (!pxp)
++		return -ENOMEM;
++	mutex_init(&pxp->hw_lock);
++	init_completion(&pxp->done);
++	pxp->pdev = pdev;
++
++	pxp->base = devm_platform_ioremap_resource(pdev, 0);
++	if (IS_ERR(pxp->base))
++		return PTR_ERR(pxp->base);
++
++	pxp->irq = platform_get_irq(pdev, 0);
++	if (pxp->irq < 0)
++		return pxp->irq;
++
++	ret = dma_set_mask_and_coherent(dev, DMA_BIT_MASK(32));
++	if (ret)
++		return ret;
++
++	version = readl(pxp->base + HW_PXP_VERSION);
++	if ((version >> 24) != 2)
++		return dev_err_probe(dev, -ENODEV,
++				     "unexpected PXP version 0x%08x\n", version);
++
++	ret = stmp_reset_block(pxp->base + HW_PXP_CTRL);
++	if (ret)
++		return dev_err_probe(dev, ret, "reset failed\n");
++	writel(STAT_ALL_IRQS, pxp->base + HW_PXP_STAT_CLR);
++
++	ret = devm_request_irq(dev, pxp->irq, pxp_irq, 0, DRV_NAME, pxp);
++	if (ret)
++		return ret;
++
++	pxp->misc.minor = MISC_DYNAMIC_MINOR;
++	pxp->misc.name = "pxp";
++	pxp->misc.fops = &pxp_fops;
++	pxp->misc.mode = 0660;
++	pxp->misc.parent = dev;
++	pxp_dev = pxp;
++	ret = misc_register(&pxp->misc);
++	if (ret) {
++		pxp_dev = NULL;
++		return ret;
++	}
++
++	platform_set_drvdata(pdev, pxp);
++	dev_info(dev, "PXP v%u.%u ready on /dev/pxp\n",
++		 version >> 24, (version >> 16) & 0xff);
++	return 0;
++}
++
++static int brain_pxp_remove(struct platform_device *pdev)
++{
++	struct brain_pxp *pxp = platform_get_drvdata(pdev);
++
++	misc_deregister(&pxp->misc);
++	writel(CTRL_SFTRST | CTRL_CLKGATE, pxp->base + HW_PXP_CTRL_SET);
++	pxp_dev = NULL;
++	return 0;
++}
++
++static const struct of_device_id brain_pxp_of_match[] = {
++	{ .compatible = "fsl,imx28-pxp" },
++	{ }
++};
++MODULE_DEVICE_TABLE(of, brain_pxp_of_match);
++
++static struct platform_driver brain_pxp_driver = {
++	.probe	= brain_pxp_probe,
++	.remove	= brain_pxp_remove,
++	.driver	= {
++		.name = DRV_NAME,
++		.of_match_table = brain_pxp_of_match,
++		/* niente unbind da sysfs: i fd aperti usano ancora pxp_dev */
++		.suppress_bind_attrs = true,
++	},
++};
++module_platform_driver(brain_pxp_driver);
++
++MODULE_DESCRIPTION("i.MX28 PXP (Pixel Pipeline) v2 for SHARP Brain");
++MODULE_LICENSE("GPL");
++MODULE_IMPORT_NS(DMA_BUF);
+diff --git a/drivers/power/supply/Kconfig b/drivers/power/supply/Kconfig
+index 455e8c36d..6da97b14c 100644
+--- a/drivers/power/supply/Kconfig
++++ b/drivers/power/supply/Kconfig
+@@ -92,6 +92,13 @@ config TEST_POWER
+ 	help
+ 	  This driver is used for testing. It's safe to say M here.
+ 
++config BATTERY_BRAIN
++	tristate "SHARP Brain battery and USB power reporting"
++	depends on MFD_SYSCON && IIO
++	help
++	  Report battery voltage, estimated capacity and external power
++	  state on SHARP Brain (i.MX28) electronic dictionaries.
++
+ config BATTERY_88PM860X
+ 	tristate "Marvell 88PM860x battery driver"
+ 	depends on MFD_88PM860X
+diff --git a/drivers/power/supply/Makefile b/drivers/power/supply/Makefile
+index b25dda1f3..70a0bd4ee 100644
+--- a/drivers/power/supply/Makefile
++++ b/drivers/power/supply/Makefile
+@@ -19,6 +19,7 @@ obj-$(CONFIG_WM831X_POWER)	+= wm831x_power.o
+ obj-$(CONFIG_WM8350_POWER)	+= wm8350_power.o
+ obj-$(CONFIG_TEST_POWER)	+= test_power.o
+ 
++obj-$(CONFIG_BATTERY_BRAIN)	+= brain_battery.o
+ obj-$(CONFIG_BATTERY_88PM860X)	+= 88pm860x_battery.o
+ obj-$(CONFIG_CHARGER_ADP5061)	+= adp5061.o
+ obj-$(CONFIG_BATTERY_ACT8945A)	+= act8945a_charger.o
+diff --git a/drivers/power/supply/brain_battery.c b/drivers/power/supply/brain_battery.c
+new file mode 100644
+index 000000000..34a7418e8
+--- /dev/null
++++ b/drivers/power/supply/brain_battery.c
+@@ -0,0 +1,993 @@
++// SPDX-License-Identifier: GPL-2.0
++/*
++ * Battery, USB power and battery charger for SHARP Brain (i.MX28)
++ *
++ * The battery voltage is measured live through LRADC channel 7 (IIO);
++ * external power comes from HW_POWER_STS of the i.MX28 power block (a
++ * syscon).
++ *
++ * The i.MX28 has a linear Li-ion charger (5 V -> battery, constant current
++ * then constant 4.2 V in hardware) but no charge controller: the boot
++ * firmware leaves it powered down and the running OS must start it, decide
++ * when the battery is full and stop it. Windows CE does that on the Brain;
++ * without it the battery never charges under Linux.
++ *
++ * The state machine and every default below reproduce what SHARP's own
++ * firmware does (pmuPdk.dll / battdrvr.dll, see ref/wince/charger-notes.md):
++ *   - pre-charge at 80 mA under 3.0 V, for 30 minutes at most
++ *   - constant current (450 mA from a USB port, with the 5 V input limited
++ *     to 480 mA so the port is never overloaded: the system has priority
++ *     and the battery gets what is left)
++ *   - full when the charge current stays under 50 mA with the cell at
++ *     4.13 V or more for five minutes; recharge under 4.0 V
++ *   - battery thermistor (LRADC channel 0 fed by the on-chip 140 uA source)
++ *     must read between -5 and 45 degrees C
++ *   - die over 100 degrees C: 100 mA; over 110: stop
++ *   - safety timeout
++ * On battery, a cell under 3.3 V powers the system off like the original
++ * firmware does.
++ */
++
++#include <linux/bitfield.h>
++#include <linux/delay.h>
++#include <linux/iio/consumer.h>
++#include <linux/input.h>
++#include <linux/interrupt.h>
++#include <linux/io.h>
++#include <linux/mfd/syscon.h>
++#include <linux/module.h>
++#include <linux/mutex.h>
++#include <linux/of.h>
++#include <linux/of_address.h>
++#include <linux/of_irq.h>
++#include <linux/platform_device.h>
++#include <linux/power_supply.h>
++#include <linux/reboot.h>
++#include <linux/regmap.h>
++#include <linux/workqueue.h>
++
++#define HW_POWER_CTRL			0x00
++#define  CTRL_ENIRQ_VBUS_VALID		BIT(3)
++#define  CTRL_VBUSVALID_IRQ		BIT(4)
++#define  CTRL_POLARITY_VBUSVALID	BIT(5)
++#define  CTRL_ENIRQ_PSWITCH		BIT(17)
++#define  CTRL_POLARITY_PSWITCH		BIT(18)
++#define  CTRL_PSWITCH_IRQ		BIT(20)
++#define HW_POWER_5VCTRL			0x10
++#define  CTRL5V_CHARGE_4P2_ILIMIT	GENMASK(17, 12)
++#define  CTRL5V_PWD_CHARGE_4P2		GENMASK(21, 20)
++#define HW_POWER_CHARGE			0x30
++#define  CHARGE_BATTCHRG_I		GENMASK(5, 0)
++#define  CHARGE_STOP_ILIMIT		GENMASK(11, 8)
++#define  CHARGE_PWD_BATTCHRG		BIT(16)
++#define HW_POWER_STS			0xc0
++#define  STS_VBUSVALID0			BIT(1)
++#define  STS_VDD5V_GT_VDDIO		BIT(5)
++#define  STS_CHRGSTS			BIT(11)
++#define  STS_BATT_BO			BIT(13)
++#define  STS_PSWITCH			GENMASK(21, 20)
++
++#define REG_SET				0x4
++#define REG_CLR				0x8
++
++/* LRADC: current source for the battery thermistor on channel 0 */
++#define HW_LRADC_CTRL2			0x20
++#define  CTRL2_TEMP_ISRC0_140UA		0x7
++#define  CTRL2_TEMP_ISRC0		GENMASK(3, 0)
++#define  CTRL2_TEMP_SENSOR_IENABLE0	BIT(8)
++
++/* thermistor readings (ADC counts): higher = colder */
++#define NTC_NO_BATTERY			3072
++#define NTC_COLD			2557	/* -5 C */
++#define NTC_HOT				1561	/* 45 C */
++
++#define DIE_WARM_C			100	/* charge at 100 mA above this */
++#define DIE_HOT_C			110	/* stop above this */
++#define DIE_SAFE_MA			100
++
++#define FULL_MV				4130
++#define POWEROFF_MV			3300
++
++#define POLL_IDLE			(30 * HZ)
++#define POLL_CHARGING			(2 * HZ)
++
++/* charge current steps of 50 mA every poll: a gentle ramp for the 5 V rail */
++#define RAMP_STEP_MA			50
++/* full: current under the threshold for 5 minutes (150 polls of 2 s) */
++#define TERM_POLLS			150
++/* ignore CHRGSTS for a while after (re)starting: the comparator needs time */
++#define SETTLE_POLLS			15
++/* thermistor check every minute */
++#define NTC_POLLS			30
++/* on battery: this many low readings in a row (30 s apart) power off */
++#define LOW_POLLS			3
++
++enum brain_chg_state {
++	CHG_OFF,	/* no external power */
++	CHG_PRECHARGE,	/* deeply discharged cell: small current */
++	CHG_FAST,	/* constant current / constant voltage */
++	CHG_DONE,	/* full, charger off, waiting for the cell to sag */
++	CHG_TEMP,	/* paused: battery too cold or too warm */
++	CHG_FAULT,	/* stopped until power is replugged */
++};
++
++struct brain_battery {
++	struct device *dev;
++	struct regmap *power;
++	struct iio_channel *vbatt;
++	struct iio_channel *temp;	/* optional: die temperature */
++	struct iio_channel *ntc;	/* optional: battery thermistor */
++	void __iomem *lradc;		/* for the thermistor current source */
++	struct power_supply *bat;
++	struct power_supply *usb;
++	struct delayed_work work;
++	struct notifier_block reboot_nb;
++	struct input_dev *pwrkey;	/* the power switch (PSWITCH) */
++	int pwrkey_irq;
++	struct mutex lock;		/* charger state and registers */
++	int vmin_uv, vmax_uv;
++
++	/* configuration (mA, mV, seconds) */
++	u32 charge_ma;
++	u32 precharge_ma;
++	u32 term_ma;
++	u32 input_ma;
++	u32 precharge_mv;
++	u32 recharge_mv;
++	u32 precharge_timeout_s;
++	u32 timeout_s;
++	u32 resistance_mohm;
++	bool charger_enabled;
++
++	/* state */
++	enum brain_chg_state state;
++	u32 cur_ma;			/* programmed right now */
++	unsigned int polls;		/* since the charge current was started */
++	unsigned int low_polls;		/* consecutive polls with CHRGSTS low */
++	unsigned int ntc_polls;		/* since the last thermistor reading */
++	unsigned int empty_polls;	/* consecutive low readings on battery */
++	unsigned long started;		/* jiffies: start of this charge cycle */
++	int ntc_adc;			/* last thermistor reading, 0 = none */
++	bool ext_power;
++};
++
++/* Li-ion open circuit voltage (mV) to state of charge (%) */
++static const struct { int mv, pct; } ocv_table[] = {
++	{ 4180, 100 }, { 4100, 92 }, { 4000, 82 }, { 3920, 72 },
++	{ 3850, 60 }, { 3800, 50 }, { 3760, 40 }, { 3730, 30 },
++	{ 3700, 20 }, { 3650, 10 }, { 3550, 5 }, { 3400, 2 }, { 3300, 0 },
++};
++
++static int ocv_to_capacity(int mv)
++{
++	int i;
++
++	if (mv >= ocv_table[0].mv)
++		return 100;
++	for (i = 1; i < ARRAY_SIZE(ocv_table); i++) {
++		if (mv >= ocv_table[i].mv) {
++			int dmv = ocv_table[i - 1].mv - ocv_table[i].mv;
++			int dp = ocv_table[i - 1].pct - ocv_table[i].pct;
++
++			return ocv_table[i].pct +
++			       (mv - ocv_table[i].mv) * dp / dmv;
++		}
++	}
++	return 0;
++}
++
++static int brain_vbatt_mv(struct brain_battery *bb, int *mv)
++{
++	int ret = iio_read_channel_processed(bb->vbatt, mv);
++
++	return ret < 0 ? ret : 0;
++}
++
++static u32 brain_sts(struct brain_battery *bb)
++{
++	u32 sts = 0;
++
++	regmap_read(bb->power, HW_POWER_STS, &sts);
++	return sts;
++}
++
++static bool sts_ext_power(u32 sts)
++{
++	return sts & (STS_VDD5V_GT_VDDIO | STS_VBUSVALID0);
++}
++
++/* BATTCHRG_I / CHARGE_4P2_ILIMIT bit weights: 10, 20, 50, 100, 200, 400 mA */
++static u32 ma_to_ilimit(u32 ma)
++{
++	static const u16 w[] = { 400, 200, 100, 50, 20, 10 };
++	u32 bits = 0;
++	int i;
++
++	for (i = 0; i < ARRAY_SIZE(w); i++) {
++		if (ma >= w[i]) {
++			ma -= w[i];
++			bits |= BIT(5 - i);
++		}
++	}
++	return bits;
++}
++
++/* STOP_ILIMIT bit weights: 10, 20, 50, 100 mA */
++static u32 ma_to_stop(u32 ma)
++{
++	static const u16 w[] = { 100, 50, 20, 10 };
++	u32 bits = 0;
++	int i;
++
++	for (i = 0; i < ARRAY_SIZE(w); i++) {
++		if (ma >= w[i]) {
++			ma -= w[i];
++			bits |= BIT(3 - i);
++		}
++	}
++	return bits;
++}
++
++/* program the charger; 0 mA powers it down */
++static void brain_chg_set_current(struct brain_battery *bb, u32 ma)
++{
++	if (!ma) {
++		regmap_write(bb->power, HW_POWER_CHARGE + REG_SET,
++			     CHARGE_PWD_BATTCHRG);
++		regmap_write(bb->power, HW_POWER_CHARGE + REG_CLR,
++			     CHARGE_BATTCHRG_I);
++		/* charger off: the system may use all the 5 V input again */
++		regmap_write(bb->power, HW_POWER_5VCTRL + REG_SET,
++			     CTRL5V_CHARGE_4P2_ILIMIT);
++	} else {
++		/* the 4.2 V rail feeding system and charger must be powered */
++		regmap_write(bb->power, HW_POWER_5VCTRL + REG_CLR,
++			     CTRL5V_PWD_CHARGE_4P2);
++		if (!bb->cur_ma && bb->input_ma)
++			regmap_update_bits(bb->power, HW_POWER_5VCTRL,
++					   CTRL5V_CHARGE_4P2_ILIMIT,
++					   FIELD_PREP(CTRL5V_CHARGE_4P2_ILIMIT,
++						      ma_to_ilimit(bb->input_ma)));
++		regmap_update_bits(bb->power, HW_POWER_CHARGE,
++				   CHARGE_BATTCHRG_I | CHARGE_STOP_ILIMIT,
++				   FIELD_PREP(CHARGE_BATTCHRG_I,
++					      ma_to_ilimit(ma)) |
++				   FIELD_PREP(CHARGE_STOP_ILIMIT,
++					      ma_to_stop(bb->term_ma)));
++		regmap_write(bb->power, HW_POWER_CHARGE + REG_CLR,
++			     CHARGE_PWD_BATTCHRG);
++	}
++	if (ma != bb->cur_ma && (!ma || !bb->cur_ma))
++		bb->polls = 0;
++	bb->cur_ma = ma;
++}
++
++static void brain_chg_enter(struct brain_battery *bb, enum brain_chg_state st)
++{
++	static const char * const names[] = {
++		"off", "precharge", "fast", "done", "temperature", "fault",
++	};
++
++	if (st == bb->state)
++		return;
++	dev_info(bb->dev, "charger: %s -> %s\n", names[bb->state], names[st]);
++	bb->state = st;
++	bb->low_polls = 0;
++	if (st != CHG_PRECHARGE && st != CHG_FAST)
++		brain_chg_set_current(bb, 0);
++}
++
++/* battery voltage with the charge current's IR rise removed (mV) */
++static int brain_ocv_mv(struct brain_battery *bb, int mv)
++{
++	return mv - (int)(bb->cur_ma * bb->resistance_mohm / 1000);
++}
++
++/* battery thermistor: switch its current source on, read, switch off */
++static void brain_read_ntc(struct brain_battery *bb)
++{
++	int i, raw, sum = 0;
++
++	if (!bb->ntc || !bb->lradc)
++		return;
++	writel(CTRL2_TEMP_ISRC0, bb->lradc + HW_LRADC_CTRL2 + REG_CLR);
++	writel(CTRL2_TEMP_ISRC0_140UA | CTRL2_TEMP_SENSOR_IENABLE0,
++	       bb->lradc + HW_LRADC_CTRL2 + REG_SET);
++	msleep(10);
++	for (i = 0; i < 5; i++) {
++		if (iio_read_channel_raw(bb->ntc, &raw) < 0) {
++			sum = 0;
++			break;
++		}
++		sum += raw;
++	}
++	writel(CTRL2_TEMP_ISRC0 | CTRL2_TEMP_SENSOR_IENABLE0,
++	       bb->lradc + HW_LRADC_CTRL2 + REG_CLR);
++	bb->ntc_adc = sum / 5;
++	bb->ntc_polls = 0;
++}
++
++/* thermistor ADC counts for -25..60 C in steps of 5 (SHARP's table) */
++static const u16 ntc_table[] = {
++	2883, 2811, 2729, 2637, 2538, 2433, 2324, 2213, 2103,
++	1997, 1895, 1801, 1713, 1633, 1561, 1497, 1439, 1388,
++};
++
++/* tenths of a degree C */
++static int ntc_to_temp(int adc)
++{
++	int i;
++
++	if (adc >= ntc_table[0])
++		return -250;
++	for (i = 1; i < ARRAY_SIZE(ntc_table); i++)
++		if (adc >= ntc_table[i])
++			return -250 + i * 50 -
++			       (adc - ntc_table[i]) * 50 /
++			       (ntc_table[i - 1] - ntc_table[i]);
++	return 600;
++}
++
++static bool brain_ntc_ok(struct brain_battery *bb)
++{
++	if (!bb->ntc)
++		return true;		/* board without a thermistor */
++	/* a failed reading (0) is not a temperature: do not charge */
++	return bb->ntc_adc >= NTC_HOT && bb->ntc_adc <= NTC_COLD;
++}
++
++static void brain_chg_step(struct brain_battery *bb, u32 sts)
++{
++	bool ext = sts & STS_VBUSVALID0;
++	int mv = 0, die = 0;
++	u32 target;
++
++	if (!bb->charger_enabled || !ext) {
++		brain_chg_enter(bb, CHG_OFF);
++		return;
++	}
++	if (brain_vbatt_mv(bb, &mv)) {
++		/* blind: never charge without knowing the cell voltage */
++		brain_chg_enter(bb, CHG_OFF);
++		return;
++	}
++	if (bb->temp)
++		iio_read_channel_processed(bb->temp, &die);
++	if (bb->state == CHG_OFF || ++bb->ntc_polls >= NTC_POLLS)
++		brain_read_ntc(bb);
++	if (bb->ntc_adc > NTC_NO_BATTERY) {
++		brain_chg_enter(bb, CHG_OFF);	/* no battery fitted */
++		return;
++	}
++
++	switch (bb->state) {
++	case CHG_OFF:
++		bb->started = jiffies;
++		if (mv > FULL_MV)
++			brain_chg_enter(bb, CHG_DONE);
++		else if (!brain_ntc_ok(bb))
++			brain_chg_enter(bb, CHG_TEMP);
++		else if (mv < (int)bb->precharge_mv)
++			brain_chg_enter(bb, CHG_PRECHARGE);
++		else
++			brain_chg_enter(bb, CHG_FAST);
++		return;
++	case CHG_DONE:
++		if (mv < (int)bb->recharge_mv && brain_ntc_ok(bb)) {
++			bb->started = jiffies;
++			brain_chg_enter(bb, CHG_FAST);
++		}
++		return;
++	case CHG_FAULT:
++		return;		/* until external power goes away */
++	case CHG_TEMP:
++		if (brain_ntc_ok(bb)) {
++			bb->started = jiffies;
++			brain_chg_enter(bb, mv < (int)bb->precharge_mv ?
++					CHG_PRECHARGE : CHG_FAST);
++		}
++		return;
++	default:
++		break;
++	}
++
++	/* PRECHARGE, FAST: the charger is (about to be) running */
++	if (!brain_ntc_ok(bb)) {
++		brain_chg_enter(bb, CHG_TEMP);
++		return;
++	}
++	if (bb->temp && die > DIE_HOT_C) {
++		dev_warn(bb->dev, "die at %d C, charger stopped\n", die);
++		brain_chg_enter(bb, CHG_FAULT);
++		return;
++	}
++	if (bb->state == CHG_PRECHARGE &&
++	    time_after(jiffies, bb->started + bb->precharge_timeout_s * HZ)) {
++		dev_warn(bb->dev, "battery does not recover, charger stopped\n");
++		brain_chg_enter(bb, CHG_FAULT);
++		return;
++	}
++	if (time_after(jiffies, bb->started + bb->timeout_s * HZ)) {
++		if (mv >= 4100) {
++			brain_chg_enter(bb, CHG_DONE);
++		} else {
++			dev_warn(bb->dev, "charge timeout, charger stopped\n");
++			brain_chg_enter(bb, CHG_FAULT);
++		}
++		return;
++	}
++
++	if (bb->state == CHG_PRECHARGE && mv >= (int)bb->precharge_mv + 50)
++		brain_chg_enter(bb, CHG_FAST);
++
++	target = bb->state == CHG_PRECHARGE ? bb->precharge_ma : bb->charge_ma;
++	if (bb->temp && die > DIE_WARM_C)
++		target = min_t(u32, target, DIE_SAFE_MA);
++	if (bb->cur_ma < target)
++		brain_chg_set_current(bb, min(target,
++					      bb->cur_ma + RAMP_STEP_MA));
++	else if (bb->cur_ma > target)
++		brain_chg_set_current(bb, target);
++	bb->polls++;
++
++	if (bb->cur_ma < target || bb->polls < SETTLE_POLLS)
++		return;
++
++	/*
++	 * CHRGSTS low = charge current under STOP_ILIMIT. With the cell at
++	 * its final voltage that means full; at a lower voltage it only
++	 * means the 5 V input limit is leaving little for the battery.
++	 */
++	if (!(sts & STS_CHRGSTS) && mv >= FULL_MV)
++		bb->low_polls++;
++	else
++		bb->low_polls = 0;
++
++	if (bb->state == CHG_FAST && bb->low_polls >= TERM_POLLS)
++		brain_chg_enter(bb, CHG_DONE);
++}
++
++static bool brain_chg_active(struct brain_battery *bb)
++{
++	return bb->state == CHG_PRECHARGE || bb->state == CHG_FAST;
++}
++
++static int brain_bat_get(struct power_supply *psy,
++			 enum power_supply_property psp,
++			 union power_supply_propval *val)
++{
++	struct brain_battery *bb = power_supply_get_drvdata(psy);
++	u32 sts = brain_sts(bb);
++	int mv, ret = 0;
++
++	mutex_lock(&bb->lock);
++	switch (psp) {
++	case POWER_SUPPLY_PROP_STATUS:
++		if (brain_chg_active(bb))
++			val->intval = POWER_SUPPLY_STATUS_CHARGING;
++		else if (bb->state == CHG_DONE)
++			val->intval = POWER_SUPPLY_STATUS_FULL;
++		else if (sts_ext_power(sts))
++			val->intval = POWER_SUPPLY_STATUS_NOT_CHARGING;
++		else
++			val->intval = POWER_SUPPLY_STATUS_DISCHARGING;
++		break;
++	case POWER_SUPPLY_PROP_CHARGE_TYPE:
++		if (bb->state == CHG_PRECHARGE)
++			val->intval = POWER_SUPPLY_CHARGE_TYPE_TRICKLE;
++		else if (bb->state == CHG_FAST)
++			val->intval = POWER_SUPPLY_CHARGE_TYPE_FAST;
++		else
++			val->intval = POWER_SUPPLY_CHARGE_TYPE_NONE;
++		break;
++	case POWER_SUPPLY_PROP_HEALTH:
++		if (sts & STS_BATT_BO)
++			val->intval = POWER_SUPPLY_HEALTH_DEAD;
++		else if (bb->state == CHG_TEMP)
++			val->intval = bb->ntc_adc > NTC_COLD ?
++				      POWER_SUPPLY_HEALTH_COLD :
++				      POWER_SUPPLY_HEALTH_OVERHEAT;
++		else if (bb->state == CHG_FAULT)
++			val->intval = POWER_SUPPLY_HEALTH_UNSPEC_FAILURE;
++		else
++			val->intval = POWER_SUPPLY_HEALTH_GOOD;
++		break;
++	case POWER_SUPPLY_PROP_PRESENT:
++		val->intval = 1;
++		break;
++	case POWER_SUPPLY_PROP_TECHNOLOGY:
++		val->intval = POWER_SUPPLY_TECHNOLOGY_LION;
++		break;
++	case POWER_SUPPLY_PROP_VOLTAGE_NOW:
++		ret = brain_vbatt_mv(bb, &mv);
++		val->intval = mv * 1000;
++		break;
++	case POWER_SUPPLY_PROP_VOLTAGE_OCV:
++		ret = brain_vbatt_mv(bb, &mv);
++		val->intval = brain_ocv_mv(bb, mv) * 1000;
++		break;
++	case POWER_SUPPLY_PROP_CAPACITY:
++		ret = brain_vbatt_mv(bb, &mv);
++		if (ret)
++			break;
++		if (bb->state == CHG_DONE)
++			val->intval = 100;
++		else
++			val->intval = min(ocv_to_capacity(brain_ocv_mv(bb, mv)),
++					  brain_chg_active(bb) ? 99 : 100);
++		break;
++	case POWER_SUPPLY_PROP_CONSTANT_CHARGE_CURRENT:
++		val->intval = bb->cur_ma * 1000;
++		break;
++	case POWER_SUPPLY_PROP_CONSTANT_CHARGE_CURRENT_MAX:
++		val->intval = bb->charge_ma * 1000;
++		break;
++	case POWER_SUPPLY_PROP_CHARGE_BEHAVIOUR:
++		val->intval = bb->charger_enabled ?
++			      POWER_SUPPLY_CHARGE_BEHAVIOUR_AUTO :
++			      POWER_SUPPLY_CHARGE_BEHAVIOUR_INHIBIT_CHARGE;
++		break;
++	case POWER_SUPPLY_PROP_TEMP:
++		/* battery thermistor, tenths of a degree */
++		if (!bb->ntc_adc || bb->ntc_adc > NTC_NO_BATTERY)
++			ret = -ENODATA;
++		else
++			val->intval = ntc_to_temp(bb->ntc_adc);
++		break;
++	case POWER_SUPPLY_PROP_TEMP_AMBIENT:
++		/* SoC die (where the charger sits), tenths of a degree */
++		if (!bb->temp) {
++			ret = -ENODATA;
++			break;
++		}
++		ret = iio_read_channel_processed(bb->temp, &mv);
++		val->intval = mv * 10;
++		if (ret > 0)
++			ret = 0;
++		break;
++	case POWER_SUPPLY_PROP_VOLTAGE_MIN_DESIGN:
++		val->intval = bb->vmin_uv;
++		break;
++	case POWER_SUPPLY_PROP_VOLTAGE_MAX_DESIGN:
++		val->intval = bb->vmax_uv;
++		break;
++	case POWER_SUPPLY_PROP_SCOPE:
++		val->intval = POWER_SUPPLY_SCOPE_SYSTEM;
++		break;
++	default:
++		ret = -EINVAL;
++	}
++	mutex_unlock(&bb->lock);
++	return ret;
++}
++
++static int brain_bat_set(struct power_supply *psy,
++			 enum power_supply_property psp,
++			 const union power_supply_propval *val)
++{
++	struct brain_battery *bb = power_supply_get_drvdata(psy);
++	int ret = 0;
++
++	mutex_lock(&bb->lock);
++	switch (psp) {
++	case POWER_SUPPLY_PROP_CONSTANT_CHARGE_CURRENT_MAX:
++		/* 780 mA is the most the charger can do */
++		if (val->intval < 10000 || val->intval > 780000)
++			ret = -EINVAL;
++		else
++			bb->charge_ma = val->intval / 1000;
++		break;
++	case POWER_SUPPLY_PROP_CHARGE_BEHAVIOUR:
++		if (val->intval == POWER_SUPPLY_CHARGE_BEHAVIOUR_AUTO)
++			bb->charger_enabled = true;
++		else if (val->intval ==
++			 POWER_SUPPLY_CHARGE_BEHAVIOUR_INHIBIT_CHARGE)
++			bb->charger_enabled = false;
++		else
++			ret = -EINVAL;
++		break;
++	default:
++		ret = -EINVAL;
++	}
++	mutex_unlock(&bb->lock);
++	if (!ret)
++		mod_delayed_work(system_wq, &bb->work, 0);
++	return ret;
++}
++
++static int brain_bat_writeable(struct power_supply *psy,
++			       enum power_supply_property psp)
++{
++	return psp == POWER_SUPPLY_PROP_CONSTANT_CHARGE_CURRENT_MAX ||
++	       psp == POWER_SUPPLY_PROP_CHARGE_BEHAVIOUR;
++}
++
++static int brain_usb_get(struct power_supply *psy,
++			 enum power_supply_property psp,
++			 union power_supply_propval *val)
++{
++	struct brain_battery *bb = power_supply_get_drvdata(psy);
++
++	if (psp != POWER_SUPPLY_PROP_ONLINE)
++		return -EINVAL;
++	val->intval = sts_ext_power(brain_sts(bb));
++	return 0;
++}
++
++static enum power_supply_property brain_bat_props[] = {
++	POWER_SUPPLY_PROP_STATUS,
++	POWER_SUPPLY_PROP_CHARGE_TYPE,
++	POWER_SUPPLY_PROP_HEALTH,
++	POWER_SUPPLY_PROP_PRESENT,
++	POWER_SUPPLY_PROP_TECHNOLOGY,
++	POWER_SUPPLY_PROP_VOLTAGE_NOW,
++	POWER_SUPPLY_PROP_VOLTAGE_OCV,
++	POWER_SUPPLY_PROP_CAPACITY,
++	POWER_SUPPLY_PROP_CONSTANT_CHARGE_CURRENT,
++	POWER_SUPPLY_PROP_CONSTANT_CHARGE_CURRENT_MAX,
++	POWER_SUPPLY_PROP_CHARGE_BEHAVIOUR,
++	POWER_SUPPLY_PROP_TEMP,
++	POWER_SUPPLY_PROP_TEMP_AMBIENT,
++	POWER_SUPPLY_PROP_VOLTAGE_MIN_DESIGN,
++	POWER_SUPPLY_PROP_VOLTAGE_MAX_DESIGN,
++	POWER_SUPPLY_PROP_SCOPE,
++};
++
++static enum power_supply_property brain_usb_props[] = {
++	POWER_SUPPLY_PROP_ONLINE,
++};
++
++static const struct power_supply_desc brain_bat_desc = {
++	.name		= "brain-battery",
++	.type		= POWER_SUPPLY_TYPE_BATTERY,
++	.properties	= brain_bat_props,
++	.num_properties	= ARRAY_SIZE(brain_bat_props),
++	.get_property	= brain_bat_get,
++	.set_property	= brain_bat_set,
++	.property_is_writeable = brain_bat_writeable,
++};
++
++static const struct power_supply_desc brain_usb_desc = {
++	.name		= "brain-usb",
++	.type		= POWER_SUPPLY_TYPE_USB,
++	.properties	= brain_usb_props,
++	.num_properties	= ARRAY_SIZE(brain_usb_props),
++	.get_property	= brain_usb_get,
++};
++
++static char *brain_usb_supplied_to[] = { "brain-battery" };
++
++/* the power block has no interrupt wired here: poll for changes */
++static void brain_battery_work(struct work_struct *work)
++{
++	struct brain_battery *bb = container_of(to_delayed_work(work),
++						struct brain_battery, work);
++	u32 sts = brain_sts(bb);
++	enum brain_chg_state old;
++	bool ext = sts_ext_power(sts), active;
++
++	mutex_lock(&bb->lock);
++	old = bb->state;
++	brain_chg_step(bb, sts);
++	active = brain_chg_active(bb);
++	if (!ext) {
++		int mv;
++
++		/* refresh the temperature shown to userspace now and then */
++		if (++bb->ntc_polls >= 2)
++			brain_read_ntc(bb);
++		/* an empty cell must not be drained further */
++		if (!brain_vbatt_mv(bb, &mv) && mv > 2000 && mv < POWEROFF_MV)
++			bb->empty_polls++;
++		else
++			bb->empty_polls = 0;
++		if (bb->empty_polls == LOW_POLLS) {
++			dev_emerg(bb->dev, "battery empty (%d mV): power off\n",
++				  mv);
++			orderly_poweroff(true);
++		}
++	} else {
++		bb->empty_polls = 0;
++	}
++	if (ext != bb->ext_power) {
++		bb->ext_power = ext;
++		power_supply_changed(bb->usb);
++	}
++	mutex_unlock(&bb->lock);
++
++	/* on battery the capacity drifts: tell userspace every poll (30 s) */
++	if (old != bb->state || !ext)
++		power_supply_changed(bb->bat);
++
++	/* poll fast with external power so plugging/unplugging is noticed */
++	schedule_delayed_work(&bb->work, ext ? POLL_CHARGING : POLL_IDLE);
++}
++
++/* never leave the charger running without its state machine */
++static int brain_battery_reboot(struct notifier_block *nb,
++				unsigned long action, void *data)
++{
++	struct brain_battery *bb = container_of(nb, struct brain_battery,
++						reboot_nb);
++
++	cancel_delayed_work_sync(&bb->work);
++	mutex_lock(&bb->lock);
++	brain_chg_set_current(bb, 0);
++	mutex_unlock(&bb->lock);
++	return NOTIFY_DONE;
++}
++
++/*
++ * Power switch. The i.MX28 PSWITCH pin latches PSWITCH_IRQ in HW_POWER_CTRL
++ * and raises interrupt 6 (shared with the 5 V detectors, which nothing here
++ * enables). POLARITY selects the edge: wait for the press, then for the
++ * release, so userspace gets a normal KEY_POWER down/up pair. It is also
++ * the wake-up source for suspend: the keyboard is polled and cannot wake.
++ */
++static irqreturn_t brain_pwrkey_irq(int irq, void *data)
++{
++	struct brain_battery *bb = data;
++	u32 ctrl = 0, sts;
++	bool pressed;
++
++	regmap_read(bb->power, HW_POWER_CTRL, &ctrl);
++
++	/*
++	 * USB plugged or unplugged: flip the polarity to wait for the other
++	 * edge and run the charger state machine now (this also wakes the
++	 * system from suspend, so plugging in starts charging at once).
++	 */
++	if (ctrl & CTRL_VBUSVALID_IRQ) {
++		regmap_write(bb->power, HW_POWER_CTRL +
++			     ((ctrl & CTRL_POLARITY_VBUSVALID) ? REG_CLR : REG_SET),
++			     CTRL_POLARITY_VBUSVALID);
++		regmap_write(bb->power, HW_POWER_CTRL + REG_CLR,
++			     CTRL_VBUSVALID_IRQ);
++		mod_delayed_work(system_wq, &bb->work, HZ / 2);
++		pm_wakeup_event(bb->dev, 0);
++		if (!(ctrl & CTRL_PSWITCH_IRQ))
++			return IRQ_HANDLED;
++	}
++	if (!(ctrl & CTRL_PSWITCH_IRQ))
++		return IRQ_NONE;
++
++	pressed = !(ctrl & CTRL_POLARITY_PSWITCH);
++	/* now wait for the opposite edge */
++	regmap_write(bb->power, HW_POWER_CTRL + (pressed ? REG_SET : REG_CLR),
++		     CTRL_POLARITY_PSWITCH);
++	regmap_write(bb->power, HW_POWER_CTRL + REG_CLR, CTRL_PSWITCH_IRQ);
++
++	/* a press shorter than the interrupt latency: report both edges */
++	sts = brain_sts(bb);
++	input_report_key(bb->pwrkey, KEY_POWER, 1);
++	input_sync(bb->pwrkey);
++	if (!pressed || !(sts & STS_PSWITCH)) {
++		input_report_key(bb->pwrkey, KEY_POWER, 0);
++		input_sync(bb->pwrkey);
++		if (pressed)	/* already released: back to waiting for a press */
++			regmap_write(bb->power, HW_POWER_CTRL + REG_CLR,
++				     CTRL_POLARITY_PSWITCH);
++	}
++	pm_wakeup_event(bb->dev, 0);
++	return IRQ_HANDLED;
++}
++
++static int brain_pwrkey_init(struct brain_battery *bb)
++{
++	struct device *dev = bb->dev;
++	int irq, ret;
++
++	irq = of_irq_get(dev->of_node, 0);
++	if (irq <= 0)
++		return irq == -EPROBE_DEFER ? irq : 0;	/* no power key */
++
++	bb->pwrkey = devm_input_allocate_device(dev);
++	if (!bb->pwrkey)
++		return -ENOMEM;
++	bb->pwrkey->name = "Brain Power Button";
++	bb->pwrkey->phys = "brain-pswitch/input0";
++	input_set_capability(bb->pwrkey, EV_KEY, KEY_POWER);
++	ret = input_register_device(bb->pwrkey);
++	if (ret)
++		return ret;
++
++	/* start waiting for a press, with any stale latch cleared */
++	regmap_write(bb->power, HW_POWER_CTRL + REG_CLR,
++		     CTRL_PSWITCH_IRQ | CTRL_POLARITY_PSWITCH);
++	ret = devm_request_threaded_irq(dev, irq, NULL, brain_pwrkey_irq,
++					IRQF_ONESHOT | IRQF_SHARED,
++					"brain-pswitch", bb);
++	if (ret)
++		return ret;
++	/* VBUSVALID: interrupt on the edge away from the current state */
++	regmap_write(bb->power, HW_POWER_CTRL +
++		     ((brain_sts(bb) & STS_VBUSVALID0) ? REG_CLR : REG_SET),
++		     CTRL_POLARITY_VBUSVALID);
++	regmap_write(bb->power, HW_POWER_CTRL + REG_CLR, CTRL_VBUSVALID_IRQ);
++	regmap_write(bb->power, HW_POWER_CTRL + REG_SET,
++		     CTRL_ENIRQ_PSWITCH | CTRL_ENIRQ_VBUS_VALID);
++	bb->pwrkey_irq = irq;
++	device_init_wakeup(dev, true);
++	return 0;
++}
++
++static int brain_battery_suspend(struct device *dev)
++{
++	struct brain_battery *bb = dev_get_drvdata(dev);
++
++	if (bb->pwrkey_irq && device_may_wakeup(dev))
++		enable_irq_wake(bb->pwrkey_irq);
++	return 0;
++}
++
++static int brain_battery_resume(struct device *dev)
++{
++	struct brain_battery *bb = dev_get_drvdata(dev);
++
++	if (bb->pwrkey_irq && device_may_wakeup(dev))
++		disable_irq_wake(bb->pwrkey_irq);
++	/* the cell may have changed a lot while asleep */
++	mod_delayed_work(system_wq, &bb->work, 0);
++	return 0;
++}
++
++static DEFINE_SIMPLE_DEV_PM_OPS(brain_battery_pm, brain_battery_suspend,
++				brain_battery_resume);
++
++static int brain_battery_probe(struct platform_device *pdev)
++{
++	struct device *dev = &pdev->dev;
++	struct device_node *np = dev->of_node;
++	struct power_supply_config cfg = {};
++	struct brain_battery *bb;
++	u32 ua;
++	int ret;
++
++	bb = devm_kzalloc(dev, sizeof(*bb), GFP_KERNEL);
++	if (!bb)
++		return -ENOMEM;
++	bb->dev = dev;
++	mutex_init(&bb->lock);
++
++	bb->power = syscon_node_to_regmap(dev->parent->of_node);
++	if (IS_ERR(bb->power))
++		return dev_err_probe(dev, PTR_ERR(bb->power),
++				     "no power block regmap\n");
++
++	bb->vbatt = devm_iio_channel_get(dev, "vbatt");
++	if (IS_ERR(bb->vbatt))
++		return dev_err_probe(dev, PTR_ERR(bb->vbatt),
++				     "no battery voltage channel\n");
++
++	bb->temp = devm_iio_channel_get(dev, "temp");
++	if (IS_ERR(bb->temp)) {
++		if (PTR_ERR(bb->temp) == -EPROBE_DEFER)
++			return -EPROBE_DEFER;
++		bb->temp = NULL;
++	}
++
++	bb->ntc = devm_iio_channel_get(dev, "batt-temp");
++	if (IS_ERR(bb->ntc)) {
++		if (PTR_ERR(bb->ntc) == -EPROBE_DEFER)
++			return -EPROBE_DEFER;
++		bb->ntc = NULL;
++	} else {
++		/* the thermistor's current source is an LRADC register */
++		struct device_node *lradc = of_parse_phandle(np, "io-channels",
++							     0);
++
++		struct resource res;
++
++		/*
++		 * Plain ioremap: the region already belongs to the LRADC
++		 * drivers, only the atomic SET/CLR registers are used here.
++		 */
++		if (lradc && !of_address_to_resource(lradc, 0, &res))
++			bb->lradc = devm_ioremap(dev, res.start,
++						 resource_size(&res));
++		of_node_put(lradc);
++		if (!bb->lradc)
++			return dev_err_probe(dev, -ENOMEM,
++					     "cannot map the thermistor source\n");
++	}
++
++	bb->vmin_uv = 3300000;
++	bb->vmax_uv = 4200000;
++	of_property_read_u32(np, "voltage-min-design-microvolt", &bb->vmin_uv);
++	of_property_read_u32(np, "voltage-max-design-microvolt", &bb->vmax_uv);
++
++	/* charger defaults; see the device tree for the values in use */
++	bb->charge_ma = 450;
++	bb->precharge_ma = 80;
++	bb->term_ma = 50;
++	bb->input_ma = 480;		/* 0: keep the firmware's 5 V limit */
++	bb->precharge_mv = 3000;
++	bb->recharge_mv = 4000;
++	bb->precharge_timeout_s = 30 * 60;
++	bb->timeout_s = 10 * 3600;
++	bb->resistance_mohm = 250;
++	bb->charger_enabled = !of_property_read_bool(np, "sharp,no-charger");
++	if (!of_property_read_u32(np, "sharp,charge-current-microamp", &ua))
++		bb->charge_ma = ua / 1000;
++	if (!of_property_read_u32(np, "sharp,precharge-current-microamp", &ua))
++		bb->precharge_ma = ua / 1000;
++	if (!of_property_read_u32(np, "sharp,term-current-microamp", &ua))
++		bb->term_ma = ua / 1000;
++	if (!of_property_read_u32(np, "sharp,input-current-limit-microamp",
++				  &ua))
++		bb->input_ma = ua / 1000;
++	if (!of_property_read_u32(np, "sharp,recharge-microvolt", &ua))
++		bb->recharge_mv = ua / 1000;
++	of_property_read_u32(np, "sharp,charge-timeout-seconds",
++			     &bb->timeout_s);
++	of_property_read_u32(np, "sharp,battery-resistance-milliohm",
++			     &bb->resistance_mohm);
++	bb->charge_ma = clamp(bb->charge_ma, 10u, 780u);
++	bb->precharge_ma = clamp(bb->precharge_ma, 10u, bb->charge_ma);
++	bb->term_ma = clamp(bb->term_ma, 10u, 180u);
++
++	/* start from a known state: charger off until the first poll */
++	brain_chg_set_current(bb, 0);
++
++	cfg.drv_data = bb;
++	cfg.of_node = np;
++	bb->bat = devm_power_supply_register(dev, &brain_bat_desc, &cfg);
++	if (IS_ERR(bb->bat))
++		return PTR_ERR(bb->bat);
++
++	cfg.of_node = NULL;
++	cfg.supplied_to = brain_usb_supplied_to;
++	cfg.num_supplicants = ARRAY_SIZE(brain_usb_supplied_to);
++	bb->usb = devm_power_supply_register(dev, &brain_usb_desc, &cfg);
++	if (IS_ERR(bb->usb))
++		return PTR_ERR(bb->usb);
++
++	bb->reboot_nb.notifier_call = brain_battery_reboot;
++	ret = devm_register_reboot_notifier(dev, &bb->reboot_nb);
++	if (ret)
++		return ret;
++
++	bb->ext_power = sts_ext_power(brain_sts(bb));
++	INIT_DELAYED_WORK(&bb->work, brain_battery_work);
++	platform_set_drvdata(pdev, bb);
++	ret = brain_pwrkey_init(bb);
++	if (ret)
++		dev_warn(dev, "power key unavailable: %d\n", ret);
++	schedule_delayed_work(&bb->work, HZ);
++	dev_info(dev, "charger %s: %u mA (5 V input %u mA), stop under %u mA%s\n",
++		 bb->charger_enabled ? "on" : "off", bb->charge_ma,
++		 bb->input_ma, bb->term_ma,
++		 bb->ntc ? ", battery thermistor" : "");
++	return 0;
++}
++
++static int brain_battery_remove(struct platform_device *pdev)
++{
++	struct brain_battery *bb = platform_get_drvdata(pdev);
++
++	cancel_delayed_work_sync(&bb->work);
++	mutex_lock(&bb->lock);
++	brain_chg_set_current(bb, 0);
++	mutex_unlock(&bb->lock);
++	return 0;
++}
++
++static const struct of_device_id brain_battery_of_match[] = {
++	{ .compatible = "sharp,brain-battery" },
++	{ }
++};
++MODULE_DEVICE_TABLE(of, brain_battery_of_match);
++
++static struct platform_driver brain_battery_driver = {
++	.probe	= brain_battery_probe,
++	.remove	= brain_battery_remove,
++	.driver	= {
++		.name = "brain-battery",
++		.of_match_table = brain_battery_of_match,
++		.pm = pm_sleep_ptr(&brain_battery_pm),
++	},
++};
++module_platform_driver(brain_battery_driver);
++
++MODULE_DESCRIPTION("SHARP Brain battery, USB power and charger");
++MODULE_LICENSE("GPL");
+diff --git a/drivers/rtc/rtc-stmp3xxx.c b/drivers/rtc/rtc-stmp3xxx.c
+index aae40d20d..f7bce7acc 100644
+--- a/drivers/rtc/rtc-stmp3xxx.c
++++ b/drivers/rtc/rtc-stmp3xxx.c
+@@ -58,8 +58,25 @@ struct stmp3xxx_rtc_data {
+ 	struct rtc_device *rtc;
+ 	void __iomem *io;
+ 	int irq_alarm;
++	/*
++	 * Seconds to add to the hardware counter to get UTC. Some boot
++	 * firmwares (e.g. Windows CE on SHARP Brain) count local time from
++	 * 2000-01-01 instead of UTC from 1970.
++	 */
++	time64_t offset;
+ };
+ 
++static int stmp3xxx_rtc_to_hw(struct stmp3xxx_rtc_data *rtc_data,
++			      struct rtc_time *tm, u32 *hw)
++{
++	time64_t t = rtc_tm_to_time64(tm) - rtc_data->offset;
++
++	if (t < 0 || t > U32_MAX)
++		return -EINVAL;
++	*hw = t;
++	return 0;
++}
++
+ #if IS_ENABLED(CONFIG_STMP3XXX_RTC_WATCHDOG)
+ /**
+  * stmp3xxx_wdt_set_timeout - configure the watchdog inside the STMP3xxx RTC
+@@ -154,15 +171,21 @@ static int stmp3xxx_rtc_gettime(struct device *dev, struct rtc_time *rtc_tm)
+ 	if (ret)
+ 		return ret;
+ 
+-	rtc_time64_to_tm(readl(rtc_data->io + STMP3XXX_RTC_SECONDS), rtc_tm);
++	rtc_time64_to_tm((time64_t)readl(rtc_data->io + STMP3XXX_RTC_SECONDS) +
++			 rtc_data->offset, rtc_tm);
+ 	return 0;
+ }
+ 
+ static int stmp3xxx_rtc_settime(struct device *dev, struct rtc_time *rtc_tm)
+ {
+ 	struct stmp3xxx_rtc_data *rtc_data = dev_get_drvdata(dev);
++	u32 hw;
++	int ret;
+ 
+-	writel(rtc_tm_to_time64(rtc_tm), rtc_data->io + STMP3XXX_RTC_SECONDS);
++	ret = stmp3xxx_rtc_to_hw(rtc_data, rtc_tm, &hw);
++	if (ret)
++		return ret;
++	writel(hw, rtc_data->io + STMP3XXX_RTC_SECONDS);
+ 	return stmp3xxx_wait_time(rtc_data);
+ }
+ 
+@@ -208,15 +231,21 @@ static int stmp3xxx_rtc_read_alarm(struct device *dev, struct rtc_wkalrm *alm)
+ {
+ 	struct stmp3xxx_rtc_data *rtc_data = dev_get_drvdata(dev);
+ 
+-	rtc_time64_to_tm(readl(rtc_data->io + STMP3XXX_RTC_ALARM), &alm->time);
++	rtc_time64_to_tm((time64_t)readl(rtc_data->io + STMP3XXX_RTC_ALARM) +
++			 rtc_data->offset, &alm->time);
+ 	return 0;
+ }
+ 
+ static int stmp3xxx_rtc_set_alarm(struct device *dev, struct rtc_wkalrm *alm)
+ {
+ 	struct stmp3xxx_rtc_data *rtc_data = dev_get_drvdata(dev);
++	u32 hw;
++	int ret;
+ 
+-	writel(rtc_tm_to_time64(&alm->time), rtc_data->io + STMP3XXX_RTC_ALARM);
++	ret = stmp3xxx_rtc_to_hw(rtc_data, &alm->time, &hw);
++	if (ret)
++		return ret;
++	writel(hw, rtc_data->io + STMP3XXX_RTC_ALARM);
+ 
+ 	stmp3xxx_alarm_irq_enable(dev, alm->enabled);
+ 
+@@ -366,19 +395,33 @@ static int stmp3xxx_rtc_probe(struct platform_device *pdev)
+ 	}
+ 
+ 	rtc_data->rtc->ops = &stmp3xxx_rtc_ops;
+-	rtc_data->rtc->range_max = U32_MAX;
++	{
++		u32 offset = 0;
++
++		of_property_read_u32(pdev->dev.of_node,
++				     "sharp,rtc-offset-seconds", &offset);
++		rtc_data->offset = offset;
++	}
++	rtc_data->rtc->range_min = rtc_data->offset;
++	rtc_data->rtc->range_max = (time64_t)U32_MAX + rtc_data->offset;
+ 
+ 	err = devm_rtc_register_device(rtc_data->rtc);
+ 	if (err)
+ 		return err;
+ 
+ 	stmp3xxx_wdt_register(pdev);
++	/* the alarm can wake the system (WinCE uses it the same way) */
++	device_init_wakeup(&pdev->dev, true);
+ 	return 0;
+ }
+ 
+ #ifdef CONFIG_PM_SLEEP
+ static int stmp3xxx_rtc_suspend(struct device *dev)
+ {
++	struct stmp3xxx_rtc_data *rtc_data = dev_get_drvdata(dev);
++
++	if (device_may_wakeup(dev))
++		enable_irq_wake(rtc_data->irq_alarm);
+ 	return 0;
+ }
+ 
+@@ -386,6 +429,8 @@ static int stmp3xxx_rtc_resume(struct device *dev)
+ {
+ 	struct stmp3xxx_rtc_data *rtc_data = dev_get_drvdata(dev);
+ 
++	if (device_may_wakeup(dev))
++		disable_irq_wake(rtc_data->irq_alarm);
+ 	stmp_reset_block(rtc_data->io);
+ 	writel(STMP3XXX_RTC_PERSISTENT0_ALARM_EN |
+ 			STMP3XXX_RTC_PERSISTENT0_ALARM_WAKE_EN |
+diff --git a/include/linux/brain_lcd.h b/include/linux/brain_lcd.h
+new file mode 100644
+index 000000000..4d1644a86
+--- /dev/null
++++ b/include/linux/brain_lcd.h
+@@ -0,0 +1,37 @@
++/* SPDX-License-Identifier: GPL-2.0 */
++/*
++ * SHARP Brain panel: access to the frame buffer being scanned out, for
++ * drivers that render into it directly (the PXP video overlay).
++ */
++#ifndef _LINUX_BRAIN_LCD_H
++#define _LINUX_BRAIN_LCD_H
++
++#include <linux/errno.h>
++#include <linux/kconfig.h>
++#include <linux/types.h>
++
++struct brain_lcd_scanout {
++	dma_addr_t dma;		/* first pixel */
++	u32 width, height;	/* pixels */
++	u32 pitch;		/* bytes per row */
++	void *fb;		/* reference held between get and put */
++};
++
++#if IS_REACHABLE(CONFIG_TINYDRM_BRAIN)
++/* Pin the RGB565 frame buffer the panel currently shows. */
++int brain_lcd_scanout_get(struct brain_lcd_scanout *so);
++/* Send rows [y0, y1) to the panel (nothing if y1 <= y0) and unpin. */
++void brain_lcd_scanout_put(struct brain_lcd_scanout *so, u32 y0, u32 y1);
++#else
++static inline int brain_lcd_scanout_get(struct brain_lcd_scanout *so)
++{
++	return -ENODEV;
++}
++
++static inline void brain_lcd_scanout_put(struct brain_lcd_scanout *so,
++					 u32 y0, u32 y1)
++{
++}
++#endif
++
++#endif /* _LINUX_BRAIN_LCD_H */
+diff --git a/include/uapi/misc/brain_pxp.h b/include/uapi/misc/brain_pxp.h
+new file mode 100644
+index 000000000..cd84e93d0
+--- /dev/null
++++ b/include/uapi/misc/brain_pxp.h
+@@ -0,0 +1,140 @@
++/* SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note */
++/*
++ * brain-pxp: interfaccia utente per il PXP (Pixel Pipeline) v2 dell'i.MX28
++ * nei dizionari SHARP Brain.
++ *
++ * Uso tipico:
++ *   fd = open("/dev/pxp", O_RDWR);
++ *   ioctl(fd, PXP_IOC_ALLOC, &a);            // buffer DMA contiguo
++ *   p = mmap(NULL, a.size, ..., fd, a.mmap_offset);
++ *   ioctl(fd, PXP_IOC_RUN, &job);            // esegue e aspetta l'IRQ
++ */
++#ifndef _UAPI_MISC_BRAIN_PXP_H
++#define _UAPI_MISC_BRAIN_PXP_H
++
++#include <linux/ioctl.h>
++#include <linux/types.h>
++
++#define PXP_MAX_BUFFERS		8
++
++/* Formati sorgente S0 (campo CTRL.S0_FORMAT) */
++#define PXP_S0_ARGB8888		0x0
++#define PXP_S0_RGB888		0x1	/* 32 bit per pixel, byte alto ignorato */
++#define PXP_S0_RGB565		0x4
++#define PXP_S0_RGB555		0x5
++#define PXP_S0_YUV422		0x8	/* planare: Y, U, V */
++#define PXP_S0_YUV420		0x9	/* planare: Y, U, V */
++#define PXP_S0_UYVY		0xA
++#define PXP_S0_VYUY		0xB
++
++/* Formati di uscita (campo CTRL.OUTBUF_FORMAT) */
++#define PXP_OUT_ARGB8888	0x0
++#define PXP_OUT_RGB888		0x1	/* 32 bit per pixel */
++#define PXP_OUT_RGB888P		0x2	/* 24 bit impacchettato */
++#define PXP_OUT_ARGB1555	0x3
++#define PXP_OUT_RGB565		0x4
++#define PXP_OUT_RGB555		0x5
++#define PXP_OUT_YUV444		0x7
++#define PXP_OUT_UYVY		0xA
++#define PXP_OUT_VYUY		0xB
++
++struct pxp_alloc {
++	__u32 size;		/* in: byte richiesti */
++	__u32 index;		/* out: indice del buffer (0..7) */
++	__u64 mmap_offset;	/* out: offset da passare a mmap() */
++};
++
++/*
++ * Tutte le coordinate sono in pixel e devono essere multipli di 8
++ * (il PXP lavora a blocchi 8x8). Le coordinate src_* e dst_* sono
++ * espresse prima della rotazione; out_width/out_height sono le
++ * dimensioni fisiche del buffer di uscita.
++ */
++struct pxp_job {
++	/* Sorgente S0 */
++	__u32 s0_index;		/* buffer sorgente */
++	__u32 s0_format;	/* PXP_S0_* */
++	__u32 s0_width;		/* larghezza dell'immagine sorgente */
++	__u32 s0_height;
++	__u32 src_x, src_y;	/* origine del ritaglio nella sorgente */
++	__u32 src_w, src_h;	/* dimensione del ritaglio (0 = come dst) */
++
++	/* Uscita */
++	__u32 out_index;	/* buffer di destinazione */
++	__u32 out_format;	/* PXP_OUT_* */
++	__u32 out_width;
++	__u32 out_height;
++	__u32 dst_x, dst_y;	/* dove mettere S0 nell'uscita */
++	__u32 dst_w, dst_h;	/* dimensione nell'uscita (0 = tutta) */
++
++	__u32 rotate;		/* 0, 90, 180, 270 */
++	__u32 flags;		/* PXP_FLAG_* */
++	__u32 background;	/* colore di sfondo fuori da S0 (RGB888) */
++	__u32 timeout_ms;	/* 0 = 1000 ms */
++
++	/* Risultati */
++	__u32 stat;		/* valore di HW_PXP_STAT a fine lavoro */
++	__u32 elapsed_us;	/* tempo hardware misurato */
++
++	/*
++	 * Prima riga, dentro il buffer di uscita, da cui parte l'immagine
++	 * out_width x out_height (le righe sono larghe out_width pixel).
++	 */
++	__u32 out_y;
++	__u32 reserved[3];	/* devono valere 0 */
++};
++
++/*
++ * out_index = PXP_BUF_SCREEN: il PXP scrive direttamente nel frame buffer
++ * che il pannello sta mostrando, nelle righe [out_y, out_y + out_height),
++ * e a lavoro finito il kernel invia al pannello proprio quelle righe
++ * (overlay hardware: nessuna copia fatta dalla CPU). Vincoli: out_width
++ * uguale alla larghezza dello schermo (il PXP scrive righe intere e riempie
++ * con "background" cio' che sta fuori dal rettangolo dst), out_format
++ * PXP_OUT_RGB565, rotate 0. Il server grafico non sa di questi pixel:
++ * chi li usa deve possedere quell'area di schermo e non ridisegnarla.
++ */
++#define PXP_BUF_SCREEN		0xffffffffu
++
++struct pxp_screen {
++	__u32 width;		/* pixel */
++	__u32 height;
++	__u32 pitch;		/* byte per riga */
++	__u32 format;		/* PXP_OUT_RGB565 */
++};
++
++#define PXP_FLAG_HFLIP		(1 << 0)
++#define PXP_FLAG_VFLIP		(1 << 1)
++#define PXP_FLAG_YUV_FULL	(1 << 2)	/* coefficienti YUV invece di YCbCr */
++
++struct pxp_info {
++	__u32 version;		/* HW_PXP_VERSION */
++	__u32 ctrl;		/* HW_PXP_CTRL */
++	__u32 stat;		/* HW_PXP_STAT */
++	__u32 irq_count;	/* interrupt ricevuti dal caricamento */
++	__u32 jobs_done;
++	__u32 jobs_timeout;
++};
++
++/*
++ * Importa un dma-buf contiguo (ad esempio un dumb buffer DRM esportato
++ * con PRIME) come buffer del PXP: cosi' il PXP scrive direttamente nella
++ * memoria dello schermo. I buffer importati non si mappano con mmap()
++ * su /dev/pxp: si usano dal loro driver di origine.
++ */
++struct pxp_import {
++	__s32 fd;		/* in: file descriptor del dma-buf */
++	__u32 index;		/* out: indice del buffer */
++	__u32 size;		/* out: dimensione in byte */
++	__u32 reserved;
++};
++
++#define PXP_IOC_MAGIC	'X'
++#define PXP_IOC_ALLOC	_IOWR(PXP_IOC_MAGIC, 0, struct pxp_alloc)
++#define PXP_IOC_FREE	_IOW(PXP_IOC_MAGIC, 1, __u32)
++#define PXP_IOC_RUN	_IOWR(PXP_IOC_MAGIC, 2, struct pxp_job)
++#define PXP_IOC_INFO	_IOR(PXP_IOC_MAGIC, 3, struct pxp_info)
++#define PXP_IOC_IMPORT	_IOWR(PXP_IOC_MAGIC, 4, struct pxp_import)
++#define PXP_IOC_SCREEN	_IOR(PXP_IOC_MAGIC, 5, struct pxp_screen)
++
++#endif /* _UAPI_MISC_BRAIN_PXP_H */
+diff --git a/sound/soc/codecs/Kconfig b/sound/soc/codecs/Kconfig
+index f177251a1..325c9b0f9 100644
+--- a/sound/soc/codecs/Kconfig
++++ b/sound/soc/codecs/Kconfig
+@@ -609,6 +609,13 @@ config SND_SOC_BD28623
+ 	  This codec does not have any control buses such as I2C, it
+ 	  detect format of I2S automatically.
+ 
++config SND_SOC_BU26154
++	tristate "ROHM BU26154 mono audio codec"
++	depends on I2C
++	help
++	  Enable support for the ROHM BU26154 mono codec with speaker and
++	  headphone amplifiers, used in SHARP Brain dictionaries.
++
+ config SND_SOC_BT_SCO
+ 	tristate "Dummy BT SCO codec driver"
+ 
+diff --git a/sound/soc/codecs/Makefile b/sound/soc/codecs/Makefile
+index b1c25189e..37e59344c 100644
+--- a/sound/soc/codecs/Makefile
++++ b/sound/soc/codecs/Makefile
+@@ -48,6 +48,7 @@ snd-soc-arizona-objs := arizona.o arizona-jack.o
+ snd-soc-aw8738-objs := aw8738.o
+ snd-soc-bd28623-objs := bd28623.o
+ snd-soc-bt-sco-objs := bt-sco.o
++snd-soc-bu26154-objs := bu26154.o
+ snd-soc-cpcap-objs := cpcap.o
+ snd-soc-cq93vc-objs := cq93vc.o
+ snd-soc-cros-ec-codec-objs := cros_ec_codec.o
+@@ -412,6 +413,7 @@ obj-$(CONFIG_SND_SOC_ALC5632)	+= snd-soc-alc5632.o
+ obj-$(CONFIG_SND_SOC_ARIZONA)	+= snd-soc-arizona.o
+ obj-$(CONFIG_SND_SOC_AW8738)	+= snd-soc-aw8738.o
+ obj-$(CONFIG_SND_SOC_BD28623)	+= snd-soc-bd28623.o
++obj-$(CONFIG_SND_SOC_BU26154)	+= snd-soc-bu26154.o
+ obj-$(CONFIG_SND_SOC_BT_SCO)	+= snd-soc-bt-sco.o
+ obj-$(CONFIG_SND_SOC_CQ0093VC) += snd-soc-cq93vc.o
+ obj-$(CONFIG_SND_SOC_CPCAP)	+= snd-soc-cpcap.o
+diff --git a/sound/soc/codecs/bu26154.c b/sound/soc/codecs/bu26154.c
+new file mode 100644
+index 000000000..664c3c052
+--- /dev/null
++++ b/sound/soc/codecs/bu26154.c
+@@ -0,0 +1,542 @@
++// SPDX-License-Identifier: GPL-2.0
++/*
++ * ROHM BU26154 mono audio codec (with touch controller) - ASoC driver
++ *
++ * Used in the SHARP Brain PW-Sx5 electronic dictionaries. Register layout
++ * from the ROHM datasheet (TSZ02201-0V2V0E500110-1-2, Rev.002):
++ *
++ *  - 8 bit registers, I2C address 0x1a
++ *  - every register is read at an even index and written at index + 1
++ *  - four register pages selected with MAPCON (read 0x1c / write 0x1d)
++ *
++ * The register "number" used by this driver is (page << 8) | read_index.
++ *
++ * Clocking follows the original firmware: the SoC provides MCLK = 512 fs
++ * (CLKSEL = 6, PLL unused) and is master of BCLK/LRCLK; data is 16 bit I2S.
++ */
++
++#include <linux/delay.h>
++#include <linux/i2c.h>
++#include <linux/module.h>
++#include <linux/mutex.h>
++#include <linux/of.h>
++#include <sound/pcm.h>
++#include <sound/pcm_params.h>
++#include <sound/soc.h>
++#include <sound/tlv.h>
++
++#include "bu26154.h"
++
++#define BU_REG(page, idx)	(((page) << 8) | (idx))
++#define BU_PAGE(reg)		((reg) >> 8)
++#define BU_IDX(reg)		((reg) & 0xff)
++
++/* page 0 */
++#define BU_SR			BU_REG(0, 0x00)
++#define BU_CLKEN		BU_REG(0, 0x0c)
++#define   BU_CLKEN_MCLKEN	BIT(0)
++#define   BU_CLKEN_PLLEN	BIT(1)
++#define   BU_CLKEN_PLLOE	BIT(2)
++#define BU_CLKIO		BU_REG(0, 0x0e)
++#define   BU_CLKSEL_MCLK_512FS	0x6
++#define BU_SOFTRST		BU_REG(0, 0x10)
++#define BU_RECPLAY		BU_REG(0, 0x12)
++#define   BU_RECPLAY_REC	BIT(0)
++#define   BU_RECPLAY_PLAY	BIT(1)
++#define BU_MAPCON		0x1c
++#define BU_AREF_PM		BU_REG(0, 0x20)
++#define   BU_VMID_FAST		0x1
++#define   BU_VMID_NORMAL	0x2
++#define   BU_VMID_MASK		0x3
++#define   BU_MICBEN		BIT(2)
++#define   BU_HPVDDEN		BIT(3)
++#define   BU_HPLEN		BIT(6)
++#define   BU_HPREN		BIT(7)
++#define BU_AIN_PM		BU_REG(0, 0x22)
++#define   BU_ADCEN		BIT(1)
++#define   BU_ADCREN		BIT(2)
++#define   BU_PGAEN		BIT(3)
++#define BU_DAC_PM		BU_REG(0, 0x24)
++#define   BU_DACLEN		BIT(1)
++#define   BU_DACREN		BIT(2)
++#define BU_SPK_PM		BU_REG(0, 0x26)
++#define   BU_AVLEN		BIT(0)
++#define   BU_SPEN		BIT(1)
++#define   BU_SPK_FIXED		BIT(2)	/* "b02 is H fix" */
++#define   BU_AVREN		BIT(4)
++#define   BU_SPMDSEL_D		BIT(7)
++/* class D is selected once at probe: SPMDSEL may only change with SPEN = 0 */
++#define   BU_SPK_OFF		(BU_SPK_FIXED | BU_SPMDSEL_D)
++#define BU_TSD			BU_REG(0, 0x2c)
++#define BU_AVVOL		BU_REG(0, 0x3a)
++#define BU_PDATT		BU_REG(0, 0x3e)
++#define BU_AVCTL		BU_REG(0, 0x48)
++#define   BU_AVFADE		BIT(0)
++#define   BU_AVMUTE		BIT(1)
++#define BU_MICIF		BU_REG(0, 0x5a)
++#define BU_SAI_TX		BU_REG(0, 0x60)
++#define BU_SAI_RX		BU_REG(0, 0x62)
++#define   BU_SAI_PCM16		(0x2 << 6)
++#define BU_SAI_MODE		BU_REG(0, 0x64)
++#define   BU_SAI_MST		BIT(0)
++#define BU_DSPFILT		BU_REG(0, 0x66)
++#define BU_DVCTL		BU_REG(0, 0x68)
++#define   BU_DVFADE		BIT(3)
++#define   BU_DVMUTE		BIT(4)
++#define BU_MIXVOL		BU_REG(0, 0x6a)
++#define BU_RDVOL		BU_REG(0, 0x6c)
++#define BU_EQGAIN0		BU_REG(0, 0x74)
++
++/* page 1 */
++#define BU_HPIN			BU_REG(1, 0x82)
++#define BU_SPIN			BU_REG(1, 0x84)
++#define   BU_SPVOL_MASK		0x3
++#define   BU_SPIN1EN		BIT(2)
++#define   BU_SPIN2EN		BIT(3)
++
++struct bu26154 {
++	struct i2c_client *client;
++	struct mutex lock;		/* protects page and the I2C sequence */
++	struct mutex state_lock;	/* protects the stream/output state */
++	int page;			/* currently selected MAPCON page */
++	unsigned int rate_code;
++	bool play, rec;			/* streams that want to run */
++	unsigned int state;		/* RECPLAY value programmed */
++	bool spk_on, hp_on;		/* user selected outputs */
++};
++
++static const unsigned int bu_rates[] = {
++	8000, 11025, 12000, 16000, 22050, 24000, 32000, 44100, 48000,
++};
++
++/* ---- register access ---------------------------------------------- */
++
++static int bu_select_page(struct bu26154 *bu, int page)
++{
++	int ret;
++
++	if (bu->page == page)
++		return 0;
++	ret = i2c_smbus_write_byte_data(bu->client, BU_MAPCON + 1, page);
++	bu->page = ret ? -1 : page;
++	return ret;
++}
++
++static unsigned int bu_read(struct snd_soc_component *component,
++			    unsigned int reg)
++{
++	struct bu26154 *bu = snd_soc_component_get_drvdata(component);
++	int ret;
++
++	mutex_lock(&bu->lock);
++	ret = bu_select_page(bu, BU_PAGE(reg));
++	if (!ret)
++		ret = i2c_smbus_read_byte_data(bu->client, BU_IDX(reg));
++	mutex_unlock(&bu->lock);
++
++	if (ret < 0) {
++		dev_err(component->dev, "read 0x%03x failed: %d\n", reg, ret);
++		return 0;
++	}
++	return ret;
++}
++
++static int bu_write(struct snd_soc_component *component, unsigned int reg,
++		    unsigned int val)
++{
++	struct bu26154 *bu = snd_soc_component_get_drvdata(component);
++	int ret;
++
++	mutex_lock(&bu->lock);
++	ret = bu_select_page(bu, BU_PAGE(reg));
++	if (!ret)
++		ret = i2c_smbus_write_byte_data(bu->client, BU_IDX(reg) + 1,
++						val & 0xff);
++	mutex_unlock(&bu->lock);
++
++	if (ret)
++		dev_err(component->dev, "write 0x%03x failed: %d\n", reg, ret);
++	return ret;
++}
++
++/* ---- power sequencing --------------------------------------------- */
++
++/*
++ * Bring the codec to the RECPLAY state wanted by the open streams.
++ * Transitions always pass through the stopped state as the datasheet
++ * requires, and the analog blocks follow the recommended sequences.
++ */
++static void bu_apply_state(struct snd_soc_component *c)
++{
++	struct bu26154 *bu = snd_soc_component_get_drvdata(c);
++	unsigned int want = (bu->play ? BU_RECPLAY_PLAY : 0) |
++			    (bu->rec ? BU_RECPLAY_REC : 0);
++	unsigned int aref, spk;
++
++	/* stop first: SR, SAI and power changes need RECPLAY = 0 */
++	if (bu->state) {
++		snd_soc_component_write(c, BU_RECPLAY, 0);
++		bu->state = 0;
++	}
++
++	if (!want) {
++		snd_soc_component_update_bits(c, BU_DVCTL, BU_DVMUTE,
++					      BU_DVMUTE);
++		snd_soc_component_write(c, BU_SPK_PM, BU_SPK_OFF);
++		snd_soc_component_update_bits(c, BU_AREF_PM,
++					      BU_HPLEN | BU_HPREN, 0);
++		snd_soc_component_write(c, BU_AREF_PM, 0);
++		snd_soc_component_write(c, BU_DAC_PM, 0);
++		snd_soc_component_write(c, BU_AIN_PM, 0);
++		snd_soc_component_write(c, BU_CLKEN, 0);
++		return;
++	}
++
++	/*
++	 * MCLK (512 fs) changes with the sample rate: the datasheet wants
++	 * PLLOE = 0 while it changes and PLLOE = 1 again afterwards.
++	 */
++	snd_soc_component_write(c, BU_CLKEN, BU_CLKEN_MCLKEN);
++	snd_soc_component_write(c, BU_SR, bu->rate_code);
++	snd_soc_component_write(c, BU_CLKEN, BU_CLKEN_MCLKEN | BU_CLKEN_PLLOE);
++
++	/* VMID: fast charge, then normal mode (min 5 ms each) */
++	aref = snd_soc_component_read(c, BU_AREF_PM);
++	if ((aref & BU_VMID_MASK) != BU_VMID_NORMAL) {
++		snd_soc_component_update_bits(c, BU_AREF_PM, BU_VMID_MASK,
++					      BU_VMID_FAST);
++		usleep_range(5000, 6000);
++		snd_soc_component_update_bits(c, BU_AREF_PM, BU_VMID_MASK,
++					      BU_VMID_NORMAL);
++		usleep_range(5000, 6000);
++	}
++
++	if (want & BU_RECPLAY_PLAY) {
++		snd_soc_component_write(c, BU_DAC_PM, BU_DACLEN | BU_DACREN);
++
++		spk = BU_SPK_OFF | BU_AVLEN | BU_AVREN;
++		if (bu->spk_on)
++			spk |= BU_SPEN;
++		snd_soc_component_write(c, BU_SPK_PM, spk);
++		snd_soc_component_update_bits(c, BU_SPIN, BU_SPIN1EN,
++					      bu->spk_on ? BU_SPIN1EN : 0);
++
++		if (bu->hp_on) {
++			/* headphone LDO first, amplifiers after >= 1 ms */
++			snd_soc_component_update_bits(c, BU_AREF_PM,
++						      BU_HPVDDEN, BU_HPVDDEN);
++			usleep_range(1000, 2000);
++			snd_soc_component_update_bits(c, BU_AREF_PM,
++						      BU_HPLEN | BU_HPREN,
++						      BU_HPLEN | BU_HPREN);
++		} else {
++			snd_soc_component_update_bits(c, BU_AREF_PM,
++					BU_HPLEN | BU_HPREN | BU_HPVDDEN, 0);
++		}
++
++		snd_soc_component_update_bits(c, BU_AVCTL, BU_AVMUTE, 0);
++	} else {
++		snd_soc_component_write(c, BU_SPK_PM, BU_SPK_OFF);
++		snd_soc_component_write(c, BU_DAC_PM, 0);
++	}
++
++	if (want & BU_RECPLAY_REC) {
++		snd_soc_component_update_bits(c, BU_AREF_PM, BU_MICBEN,
++					      BU_MICBEN);
++		snd_soc_component_write(c, BU_AIN_PM, BU_PGAEN | BU_ADCEN);
++	} else {
++		snd_soc_component_update_bits(c, BU_AREF_PM, BU_MICBEN, 0);
++		snd_soc_component_write(c, BU_AIN_PM, 0);
++	}
++
++	/* DVMUTE mutes the record volume too: release it for any stream */
++	snd_soc_component_update_bits(c, BU_DVCTL, BU_DVMUTE, 0);
++	snd_soc_component_write(c, BU_RECPLAY, want);
++	bu->state = want;
++}
++
++/* ---- controls ------------------------------------------------------ */
++
++/* 0x6f = mute, then 0.5 dB steps up to 0xff = 0 dB */
++static const DECLARE_TLV_DB_SCALE(pdatt_tlv, -7200, 50, 1);
++static const SNDRV_CTL_TLVD_DECLARE_DB_RANGE(avvol_tlv,
++	0x00, 0x00, SNDRV_CTL_TLVD_DB_SCALE_ITEM(-2800, 0, 1),
++	0x01, 0x06, SNDRV_CTL_TLVD_DB_SCALE_ITEM(-2800, 400, 0),
++	0x07, 0x0c, SNDRV_CTL_TLVD_DB_SCALE_ITEM(-600, 200, 0),
++	0x0d, 0x19, SNDRV_CTL_TLVD_DB_SCALE_ITEM(600, 100, 0),
++);
++static const DECLARE_TLV_DB_SCALE(spvol_tlv, 0, 600, 0);
++
++static int bu_output_get(struct snd_kcontrol *kc,
++			 struct snd_ctl_elem_value *uc)
++{
++	struct snd_soc_component *c = snd_kcontrol_chip(kc);
++	struct bu26154 *bu = snd_soc_component_get_drvdata(c);
++
++	uc->value.integer.value[0] = kc->private_value ? bu->hp_on : bu->spk_on;
++	return 0;
++}
++
++static int bu_output_put(struct snd_kcontrol *kc,
++			 struct snd_ctl_elem_value *uc)
++{
++	struct snd_soc_component *c = snd_kcontrol_chip(kc);
++	struct bu26154 *bu = snd_soc_component_get_drvdata(c);
++	bool on = !!uc->value.integer.value[0];
++	bool *flag = kc->private_value ? &bu->hp_on : &bu->spk_on;
++
++	mutex_lock(&bu->state_lock);
++	if (*flag == on) {
++		mutex_unlock(&bu->state_lock);
++		return 0;
++	}
++	*flag = on;
++	if (bu->play)
++		bu_apply_state(c);
++	mutex_unlock(&bu->state_lock);
++	return 1;
++}
++
++#define BU_OUTPUT_SWITCH(xname, hp) {				\
++	.iface = SNDRV_CTL_ELEM_IFACE_MIXER, .name = xname,	\
++	.info = snd_ctl_boolean_mono_info,			\
++	.get = bu_output_get, .put = bu_output_put,		\
++	.private_value = hp }
++
++static const struct snd_kcontrol_new bu_controls[] = {
++	SOC_SINGLE_RANGE_TLV("Playback Volume", BU_PDATT, 0, 0x6f, 0xff, 0,
++			     pdatt_tlv),
++	SOC_SINGLE_TLV("Output Volume", BU_AVVOL, 0, 0x19, 0, avvol_tlv),
++	SOC_SINGLE_TLV("Speaker Boost Volume", BU_SPIN, 0, 3, 0, spvol_tlv),
++	SOC_SINGLE_RANGE_TLV("Capture Volume", BU_RDVOL, 0, 0x6f, 0xff, 0,
++			     pdatt_tlv),
++	BU_OUTPUT_SWITCH("Speaker Switch", 0),
++	BU_OUTPUT_SWITCH("Headphone Switch", 1),
++};
++
++void bu26154_select_output(struct snd_soc_component *c, bool headphone)
++{
++	struct bu26154 *bu = snd_soc_component_get_drvdata(c);
++
++	mutex_lock(&bu->state_lock);
++	if (bu->hp_on != headphone || bu->spk_on == headphone) {
++		bu->hp_on = headphone;
++		bu->spk_on = !headphone;
++		if (bu->play)
++			bu_apply_state(c);
++	}
++	mutex_unlock(&bu->state_lock);
++	dev_dbg(c->dev, "output: %s\n", headphone ? "headphone" : "speaker");
++}
++EXPORT_SYMBOL_GPL(bu26154_select_output);
++
++/* ---- DAI ----------------------------------------------------------- */
++
++static int bu_hw_params(struct snd_pcm_substream *substream,
++			struct snd_pcm_hw_params *params,
++			struct snd_soc_dai *dai)
++{
++	struct bu26154 *bu = snd_soc_component_get_drvdata(dai->component);
++	unsigned int rate = params_rate(params);
++	int i;
++
++	for (i = 0; i < ARRAY_SIZE(bu_rates); i++)
++		if (bu_rates[i] == rate)
++			break;
++	if (i == ARRAY_SIZE(bu_rates))
++		return -EINVAL;
++
++	/* playback and capture share one sample rate */
++	mutex_lock(&bu->state_lock);
++	if (bu->state && bu->rate_code != i) {
++		mutex_unlock(&bu->state_lock);
++		return -EBUSY;
++	}
++	bu->rate_code = i;
++	mutex_unlock(&bu->state_lock);
++	return 0;
++}
++
++static int bu_prepare(struct snd_pcm_substream *substream,
++		      struct snd_soc_dai *dai)
++{
++	struct snd_soc_component *c = dai->component;
++	struct bu26154 *bu = snd_soc_component_get_drvdata(c);
++
++	mutex_lock(&bu->state_lock);
++	if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK)
++		bu->play = true;
++	else
++		bu->rec = true;
++	bu_apply_state(c);
++	mutex_unlock(&bu->state_lock);
++	return 0;
++}
++
++static int bu_hw_free(struct snd_pcm_substream *substream,
++		      struct snd_soc_dai *dai)
++{
++	struct snd_soc_component *c = dai->component;
++	struct bu26154 *bu = snd_soc_component_get_drvdata(c);
++	bool *flag = substream->stream == SNDRV_PCM_STREAM_PLAYBACK ?
++		     &bu->play : &bu->rec;
++
++	mutex_lock(&bu->state_lock);
++	if (*flag) {
++		*flag = false;
++		bu_apply_state(c);
++	}
++	mutex_unlock(&bu->state_lock);
++	return 0;
++}
++
++static int bu_set_fmt(struct snd_soc_dai *dai, unsigned int fmt)
++{
++	/* only what the board uses: I2S, SoC is clock and frame master */
++	if ((fmt & SND_SOC_DAIFMT_FORMAT_MASK) != SND_SOC_DAIFMT_I2S ||
++	    (fmt & SND_SOC_DAIFMT_INV_MASK) != SND_SOC_DAIFMT_NB_NF ||
++	    (fmt & SND_SOC_DAIFMT_CLOCK_PROVIDER_MASK) != SND_SOC_DAIFMT_CBC_CFC)
++		return -EINVAL;
++	return 0;
++}
++
++static const struct snd_soc_dai_ops bu_dai_ops = {
++	.hw_params	= bu_hw_params,
++	.prepare	= bu_prepare,
++	.hw_free	= bu_hw_free,
++	.set_fmt	= bu_set_fmt,
++};
++
++#define BU_RATES	SNDRV_PCM_RATE_8000_48000
++
++static struct snd_soc_dai_driver bu_dai = {
++	.name = "bu26154-hifi",
++	.playback = {
++		.stream_name	= "Playback",
++		.channels_min	= 1,
++		.channels_max	= 2,
++		.rates		= BU_RATES,
++		.formats	= SNDRV_PCM_FMTBIT_S16_LE,
++	},
++	.capture = {
++		.stream_name	= "Capture",
++		.channels_min	= 1,
++		.channels_max	= 2,
++		.rates		= BU_RATES,
++		.formats	= SNDRV_PCM_FMTBIT_S16_LE,
++	},
++	.ops = &bu_dai_ops,
++	.symmetric_rate = 1,
++};
++
++/* ---- component ----------------------------------------------------- */
++
++static int bu_component_probe(struct snd_soc_component *c)
++{
++	struct bu26154 *bu = snd_soc_component_get_drvdata(c);
++
++	/* back to a known state: the boot firmware may have left anything */
++	snd_soc_component_write(c, BU_SOFTRST, 1);
++	snd_soc_component_write(c, BU_SOFTRST, 0);
++	bu->page = -1;
++
++	snd_soc_component_write(c, BU_RECPLAY, 0);
++	snd_soc_component_write(c, BU_CLKIO, BU_CLKSEL_MCLK_512FS);
++	snd_soc_component_write(c, BU_CLKEN, 0);
++	snd_soc_component_write(c, BU_TSD, 1);
++
++	/* 16 bit I2S both ways, codec is clock consumer */
++	snd_soc_component_write(c, BU_SAI_TX, BU_SAI_PCM16);
++	snd_soc_component_write(c, BU_SAI_RX, BU_SAI_PCM16);
++	snd_soc_component_write(c, BU_SAI_MODE, 0);
++
++	/* mono speaker on the L path: feed it (L+R)/2, R stays R */
++	snd_soc_component_write(c, BU_MIXVOL, 0x03);
++
++	/* firmware defaults: 0 dB analog, +12 dB speaker boost, HP both ch */
++	snd_soc_component_write(c, BU_AVVOL, 0x0a);
++	snd_soc_component_write(c, BU_PDATT, 0xff);
++	snd_soc_component_write(c, BU_SPIN, BU_SPIN1EN | 0x2);
++	snd_soc_component_write(c, BU_HPIN, 0x11);
++	snd_soc_component_write(c, BU_AVCTL, BU_AVMUTE);
++	snd_soc_component_write(c, BU_DVCTL, BU_DVMUTE);
++	/* SPEN is 0 after the reset: class D can be selected here */
++	snd_soc_component_write(c, BU_SPK_PM, BU_SPK_OFF);
++	return 0;
++}
++
++static void bu_component_remove(struct snd_soc_component *c)
++{
++	struct bu26154 *bu = snd_soc_component_get_drvdata(c);
++
++	mutex_lock(&bu->state_lock);
++	bu->play = bu->rec = false;
++	bu_apply_state(c);
++	mutex_unlock(&bu->state_lock);
++}
++
++static const struct snd_soc_component_driver bu_component = {
++	.probe			= bu_component_probe,
++	.remove			= bu_component_remove,
++	.read			= bu_read,
++	.write			= bu_write,
++	.controls		= bu_controls,
++	.num_controls		= ARRAY_SIZE(bu_controls),
++	.idle_bias_on		= 0,
++	.endianness		= 1,
++};
++
++static int bu26154_i2c_probe(struct i2c_client *client)
++{
++	struct bu26154 *bu;
++	int ret;
++
++	bu = devm_kzalloc(&client->dev, sizeof(*bu), GFP_KERNEL);
++	if (!bu)
++		return -ENOMEM;
++	bu->client = client;
++	bu->page = -1;
++	bu->spk_on = true;
++	bu->rate_code = 7;	/* 44.1 kHz */
++	mutex_init(&bu->lock);
++	mutex_init(&bu->state_lock);
++	i2c_set_clientdata(client, bu);
++
++	/* identify: page 0 must be selectable and EQ band 0 gain readable */
++	ret = i2c_smbus_write_byte_data(client, BU_MAPCON + 1, 0);
++	if (!ret)
++		ret = i2c_smbus_read_byte_data(client, BU_MAPCON);
++	if (ret != 0) {
++		dev_err(&client->dev, "BU26154 not responding (%d)\n", ret);
++		return ret < 0 ? ret : -ENODEV;
++	}
++	bu->page = 0;
++
++	return devm_snd_soc_register_component(&client->dev, &bu_component,
++					       &bu_dai, 1);
++}
++
++static const struct of_device_id bu26154_of_match[] = {
++	{ .compatible = "rohm,bu26154" },
++	{ }
++};
++MODULE_DEVICE_TABLE(of, bu26154_of_match);
++
++static const struct i2c_device_id bu26154_i2c_id[] = {
++	{ "bu26154", 0 },
++	{ }
++};
++MODULE_DEVICE_TABLE(i2c, bu26154_i2c_id);
++
++static struct i2c_driver bu26154_i2c_driver = {
++	.driver = {
++		.name = "bu26154",
++		.of_match_table = bu26154_of_match,
++	},
++	.probe_new = bu26154_i2c_probe,
++	.id_table = bu26154_i2c_id,
++};
++module_i2c_driver(bu26154_i2c_driver);
++
++MODULE_DESCRIPTION("ROHM BU26154 audio codec driver");
++MODULE_LICENSE("GPL");
+diff --git a/sound/soc/codecs/bu26154.h b/sound/soc/codecs/bu26154.h
+new file mode 100644
+index 000000000..829daeb1c
+--- /dev/null
++++ b/sound/soc/codecs/bu26154.h
+@@ -0,0 +1,11 @@
++/* SPDX-License-Identifier: GPL-2.0 */
++#ifndef _BU26154_H
++#define _BU26154_H
++
++struct snd_soc_component;
++
++/* route playback to the headphones (true) or to the speaker (false) */
++void bu26154_select_output(struct snd_soc_component *component,
++			   bool headphone);
++
++#endif
+diff --git a/sound/soc/mxs/Kconfig b/sound/soc/mxs/Kconfig
+index 402ef1ee7..b2eda0407 100644
+--- a/sound/soc/mxs/Kconfig
++++ b/sound/soc/mxs/Kconfig
+@@ -19,4 +19,12 @@ config SND_SOC_MXS_SGTL5000
+ 	  Say Y if you want to add support for SoC audio on an MXS board with
+ 	  a sgtl5000 codec.
+ 
++config SND_SOC_MXS_BRAIN
++	tristate "SoC Audio support for SHARP Brain (ROHM BU26154)"
++	depends on I2C
++	select SND_SOC_BU26154
++	help
++	  Say Y if you want audio on SHARP Brain electronic dictionaries
++	  that use the ROHM BU26154 codec, such as the PW-SH5.
++
+ endif	# SND_MXS_SOC
+diff --git a/sound/soc/mxs/Makefile b/sound/soc/mxs/Makefile
+index ab0a9a553..54b5edd92 100644
+--- a/sound/soc/mxs/Makefile
++++ b/sound/soc/mxs/Makefile
+@@ -9,3 +9,6 @@ obj-$(CONFIG_SND_MXS_SOC) += snd-soc-mxs.o snd-soc-mxs-pcm.o
+ snd-soc-mxs-sgtl5000-objs := mxs-sgtl5000.o
+ 
+ obj-$(CONFIG_SND_SOC_MXS_SGTL5000) += snd-soc-mxs-sgtl5000.o
++
++snd-soc-mxs-brain-objs := mxs-brain.o
++obj-$(CONFIG_SND_SOC_MXS_BRAIN) += snd-soc-mxs-brain.o
+diff --git a/sound/soc/mxs/mxs-brain.c b/sound/soc/mxs/mxs-brain.c
+new file mode 100644
+index 000000000..8bc807df6
+--- /dev/null
++++ b/sound/soc/mxs/mxs-brain.c
+@@ -0,0 +1,199 @@
++// SPDX-License-Identifier: GPL-2.0-or-later
++/*
++ * ASoC machine driver for SHARP Brain (i.MX28 SAIF + ROHM BU26154)
++ *
++ * Based on mxs-sgtl5000.c. SAIF0 drives playback and is clock master,
++ * SAIF1 captures as its slave; SAIF0 MCLK feeds the codec at 512 fs.
++ */
++
++#include <linux/module.h>
++#include <linux/of.h>
++#include <linux/platform_device.h>
++#include <sound/pcm_params.h>
++#include <sound/jack.h>
++#include <sound/soc.h>
++
++#include "../codecs/bu26154.h"
++#include "mxs-saif.h"
++
++static int mxs_brain_hw_params(struct snd_pcm_substream *substream,
++			       struct snd_pcm_hw_params *params)
++{
++	struct snd_soc_pcm_runtime *rtd = asoc_substream_to_rtd(substream);
++	struct snd_soc_dai *cpu_dai = asoc_rtd_to_cpu(rtd, 0);
++	u32 mclk = 512 * params_rate(params);
++	int ret;
++
++	ret = snd_soc_dai_set_sysclk(cpu_dai, MXS_SAIF_MCLK, mclk, 0);
++	if (ret)
++		dev_err(cpu_dai->dev, "failed to set MCLK to %u Hz\n", mclk);
++	return ret;
++}
++
++static const struct snd_soc_ops mxs_brain_ops = {
++	.hw_params = mxs_brain_hw_params,
++};
++
++#define MXS_BRAIN_DAI_FMT (SND_SOC_DAIFMT_I2S | SND_SOC_DAIFMT_NB_NF | \
++			   SND_SOC_DAIFMT_CBC_CFC)
++
++SND_SOC_DAILINK_DEFS(brain_tx,
++	DAILINK_COMP_ARRAY(COMP_EMPTY()),
++	DAILINK_COMP_ARRAY(COMP_CODEC(NULL, "bu26154-hifi")),
++	DAILINK_COMP_ARRAY(COMP_EMPTY()));
++
++SND_SOC_DAILINK_DEFS(brain_rx,
++	DAILINK_COMP_ARRAY(COMP_EMPTY()),
++	DAILINK_COMP_ARRAY(COMP_CODEC(NULL, "bu26154-hifi")),
++	DAILINK_COMP_ARRAY(COMP_EMPTY()));
++
++static struct snd_soc_dai_link mxs_brain_dai[] = {
++	{
++		.name		= "BU26154 Tx",
++		.stream_name	= "Playback",
++		.dai_fmt	= MXS_BRAIN_DAI_FMT,
++		.ops		= &mxs_brain_ops,
++		.playback_only	= true,
++		SND_SOC_DAILINK_REG(brain_tx),
++	}, {
++		.name		= "BU26154 Rx",
++		.stream_name	= "Capture",
++		.dai_fmt	= MXS_BRAIN_DAI_FMT,
++		.ops		= &mxs_brain_ops,
++		.capture_only	= true,
++		SND_SOC_DAILINK_REG(brain_rx),
++	},
++};
++
++/*
++ * Optional headphone detection: with "hp-det-gpios" in the device tree the
++ * card gets a "Headphone Jack" and playback moves between the speaker and
++ * the headphones automatically.
++ */
++static struct snd_soc_jack hp_jack;
++static struct snd_soc_jack_gpio hp_jack_gpio = {
++	.name = "hp-det",
++	.report = SND_JACK_HEADPHONE,
++	.debounce_time = 200,
++};
++static struct snd_soc_component *brain_codec;
++
++static int mxs_brain_jack_event(struct notifier_block *nb, unsigned long event,
++				void *data)
++{
++	if (brain_codec)
++		bu26154_select_output(brain_codec, event & SND_JACK_HEADPHONE);
++	return NOTIFY_OK;
++}
++
++static struct notifier_block mxs_brain_jack_nb = {
++	.notifier_call = mxs_brain_jack_event,
++};
++
++static int mxs_brain_late_probe(struct snd_soc_card *card)
++{
++	struct snd_soc_pcm_runtime *rtd;
++	int ret;
++
++	rtd = snd_soc_get_pcm_runtime(card, &card->dai_link[0]);
++	if (!rtd)
++		return -EINVAL;
++	brain_codec = asoc_rtd_to_codec(rtd, 0)->component;
++
++	ret = snd_soc_card_jack_new(card, "Headphone Jack", SND_JACK_HEADPHONE,
++				    &hp_jack);
++	if (ret)
++		return ret;
++	snd_soc_jack_notifier_register(&hp_jack, &mxs_brain_jack_nb);
++
++	hp_jack_gpio.gpiod_dev = card->dev;
++	ret = snd_soc_jack_add_gpios(&hp_jack, 1, &hp_jack_gpio);
++	if (ret)
++		dev_warn(card->dev, "headphone detection disabled: %d\n", ret);
++	return 0;
++}
++
++static struct snd_soc_card mxs_brain_card = {
++	.name		= "Brain",
++	.owner		= THIS_MODULE,
++	.dai_link	= mxs_brain_dai,
++	.num_links	= ARRAY_SIZE(mxs_brain_dai),
++};
++
++static int mxs_brain_probe(struct platform_device *pdev)
++{
++	struct device_node *np = pdev->dev.of_node;
++	struct snd_soc_card *card = &mxs_brain_card;
++	struct device_node *saif_np[2], *codec_np;
++	int ret, i;
++
++	saif_np[0] = of_parse_phandle(np, "saif-controllers", 0);
++	saif_np[1] = of_parse_phandle(np, "saif-controllers", 1);
++	codec_np = of_parse_phandle(np, "audio-codec", 0);
++	if (!saif_np[0] || !saif_np[1] || !codec_np) {
++		dev_err(&pdev->dev, "phandle missing or invalid\n");
++		ret = -EINVAL;
++		goto out_put;
++	}
++
++	for (i = 0; i < 2; i++) {
++		mxs_brain_dai[i].codecs->name = NULL;
++		mxs_brain_dai[i].codecs->of_node = codec_np;
++		mxs_brain_dai[i].cpus->dai_name = NULL;
++		mxs_brain_dai[i].cpus->of_node = saif_np[i];
++		mxs_brain_dai[i].platforms->name = NULL;
++		mxs_brain_dai[i].platforms->of_node = saif_np[i];
++	}
++
++	of_property_read_string(np, "model", &card->name);
++	if (of_find_property(np, "hp-det-gpios", NULL))
++		card->late_probe = mxs_brain_late_probe;
++
++	/* keep MCLK running so the codec always has a clock */
++	ret = mxs_saif_get_mclk(0, 44100 * 512, 44100);
++	if (ret) {
++		dev_err(&pdev->dev, "failed to get mclk\n");
++		goto out_put;
++	}
++
++	card->dev = &pdev->dev;
++	ret = devm_snd_soc_register_card(&pdev->dev, card);
++	if (ret) {
++		mxs_saif_put_mclk(0);
++		dev_err_probe(&pdev->dev, ret, "failed to register card\n");
++	}
++
++out_put:
++	of_node_put(codec_np);
++	of_node_put(saif_np[0]);
++	of_node_put(saif_np[1]);
++	return ret;
++}
++
++static int mxs_brain_remove(struct platform_device *pdev)
++{
++	if (hp_jack_gpio.desc)
++		snd_soc_jack_free_gpios(&hp_jack, 1, &hp_jack_gpio);
++	brain_codec = NULL;
++	mxs_saif_put_mclk(0);
++	return 0;
++}
++
++static const struct of_device_id mxs_brain_dt_ids[] = {
++	{ .compatible = "sharp,brain-audio-bu26154", },
++	{ /* sentinel */ }
++};
++MODULE_DEVICE_TABLE(of, mxs_brain_dt_ids);
++
++static struct platform_driver mxs_brain_audio_driver = {
++	.driver = {
++		.name = "mxs-brain-audio",
++		.of_match_table = mxs_brain_dt_ids,
++	},
++	.probe = mxs_brain_probe,
++	.remove = mxs_brain_remove,
++};
++module_platform_driver(mxs_brain_audio_driver);
++
++MODULE_DESCRIPTION("SHARP Brain ALSA SoC machine driver");
++MODULE_LICENSE("GPL");

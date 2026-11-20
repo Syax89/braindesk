@@ -1,0 +1,11 @@
+#!/bin/sh
+# brain-view FILE: visualizzatore immagini. feh/imlib2 su armel va in crash
+# con i PNG, quindi i formati diversi da JPEG vengono convertiti al volo.
+f="$1"
+case "$(echo "$f" | tr A-Z a-z)" in
+  *.jpg|*.jpeg) exec feh --scale-down --auto-zoom --image-bg black "$f" ;;
+esac
+t=$(mktemp /tmp/brain-view.XXXXXX.jpg)
+trap 'rm -f "$t"' EXIT
+python3 -c 'import sys; from PIL import Image; Image.open(sys.argv[1]).convert("RGB").save(sys.argv[2], quality=90)' "$f" "$t" &&
+	feh --scale-down --auto-zoom --image-bg black --title "$(basename "$f")" "$t"

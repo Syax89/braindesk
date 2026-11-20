@@ -1,0 +1,24 @@
+#!/bin/sh
+# test/fake-xorg ARGV... - finto "brain-xapp" per le prove del backend mem
+# (BRAINSHELL_XORG). Annota in $XAPP_LOG l'avvio con lo stato della shell
+# in quel momento ($BUI_MEM_STATE: deve gia' essere "suspended", cioe'
+# master DRM e ingresso ceduti PRIMA che X parta), scrive "ready" come lo
+# script vero e poi "fa girare l'app".
+#
+# Comportamento della prossima esecuzione in /tmp/fake-xorg.next (letto e
+# cancellato): "time S" l'app esce da sola dopo S secondi; "fail N" il
+# comando esce subito con codice N; niente: gira finche' arriva SIGTERM.
+L=${XAPP_LOG:-/tmp/xapp.log}
+mode=; [ -f /tmp/fake-xorg.next ] && { mode=$(cat /tmp/fake-xorg.next); rm -f /tmp/fake-xorg.next; }
+echo "start shell=$(cat "$BUI_MEM_STATE" 2>/dev/null) screen=$BRAIN_SCREEN args: $*" >> "$L"
+case "$mode" in
+fail*) echo "exit ${mode#fail }" >> "$L"; exit ${mode#fail } ;;
+esac
+trap 'echo "SIGTERM" >> "$L"; echo "exit 0" >> "$L"; exit 0' TERM
+sleep 0.2
+echo ready
+t=${mode#time }; [ -n "$mode" ] || t=600
+i=0
+while [ $i -lt $((t * 10)) ]; do sleep 0.1; i=$((i + 1)); done
+echo "exit 0 (fine dell'app)" >> "$L"
+exit 0

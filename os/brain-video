@@ -1,0 +1,3 @@
+#!/bin/sh
+# brain-video FILE: riproduce con brainplay (decodifica nativa, PXP in overlay)
+exec /usr/local/bin/brainplay "$@"

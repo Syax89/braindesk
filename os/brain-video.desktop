@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Video (PXP)
+Comment=Riproduce video a schermo intero con l'acceleratore PXP
+Exec=brain-video %f
+MimeType=video/mp4;video/x-matroska;video/webm;video/mpeg;video/x-msvideo;video/quicktime;video/ogg;
+NoDisplay=false
+Terminal=false

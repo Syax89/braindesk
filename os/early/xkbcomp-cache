@@ -1,0 +1,15 @@
+#!/bin/sh
+# Al posto di /usr/bin/xkbcomp (deviato in xkbcomp.real): il server grafico
+# ricompila la stessa mappa di tastiera a ogni avvio (3 s su questa CPU);
+# qui la si compila una volta e poi si copia il risultato.
+# Per rigenerarla: rm /var/cache/brain-xkb.xkm
+C=/var/cache/brain-xkb.xkm
+for out; do :; done
+case "$out" in
+*/server-*.xkm)
+	if [ -s "$C" ]; then cat >/dev/null; exec cp "$C" "$out"; fi
+	/usr/bin/xkbcomp.real "$@" || exit $?
+	cp "$out" "$C.tmp" 2>/dev/null && mv "$C.tmp" "$C"
+	exit 0 ;;
+esac
+exec /usr/bin/xkbcomp.real "$@"

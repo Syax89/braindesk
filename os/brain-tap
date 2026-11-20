@@ -1,0 +1,27 @@
+#!/usr/bin/env python3
+# brain-tap X Y [ms]: simula un tocco alle coordinate schermo (orizzontale),
+# scrivendo eventi nel dispositivo del touchscreen. brain-tap X1 Y1 X2 Y2 ms: trascina.
+import struct, sys, time, glob
+a = [int(v) for v in sys.argv[1:]]
+dev = None
+for n in glob.glob('/sys/class/input/event*/device/name'):
+    if open(n).read().strip() == 'mxs-lradc-ts':
+        dev = '/dev/input/' + n.split('/')[4]
+cal = (181, 3986, 3986, 255)
+def raw(x, y):
+    return (cal[0] + x * (cal[1] - cal[0]) // 854, cal[2] + y * (cal[3] - cal[2]) // 480)
+f = open(dev, 'wb', buffering=0)
+def ev(t, c, v):
+    f.write(struct.pack('llHHi', 0, 0, t, c, v))
+def pos(x, y, down=True):
+    rx, ry = raw(x, y)
+    ev(3, 0, rx); ev(3, 1, ry); ev(3, 24, 100)
+    if down: ev(1, 330, 1)
+    ev(0, 0, 0)
+if len(a) >= 5:
+    x1, y1, x2, y2, ms = a[:5]; n = max(ms // 20, 2)
+    for i in range(n + 1):
+        pos(x1 + (x2 - x1) * i // n, y1 + (y2 - y1) * i // n); time.sleep(0.02)
+else:
+    pos(a[0], a[1]); time.sleep((a[2] if len(a) > 2 else 80) / 1000)
+ev(3, 24, 0); ev(1, 330, 0); ev(0, 0, 0)

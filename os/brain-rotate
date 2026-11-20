@@ -1,0 +1,34 @@
+#!/bin/sh
+# brain-rotate [0|1|2]: orientamento dello schermo, applicato dal controller
+# del pannello (nessun costo per CPU o PXP).
+#   0 = orizzontale, 1 = verticale, 2 = verticale capovolto
+# Senza argomento passa al successivo. Serve un riavvio (circa 2 minuti).
+set -e
+cur=$(cat /etc/brain-rotation 2>/dev/null || echo 0)
+new=${1:-$(( (cur + 1) % 3 ))}
+case $new in
+  0) m="1 0 0 0 1 0 0 0 1" ;;
+  1) m="0 -1 1 1 0 0 0 0 1" ;;
+  2) m="0 1 0 -1 0 1 0 0 1" ;;
+  *) echo "uso: brain-rotate [0|1|2]" >&2; exit 1 ;;
+esac
+src=/usr/local/share/brain/dtb/imx28-pwsh5-rot$new.dtb
+[ -r "$src" ] || { echo "manca $src" >&2; exit 1; }
+DISPLAY=${DISPLAY:-:0} xmessage -center -timeout 4 "Rotazione schermo: riavvio in corso..." 2>/dev/null &
+sudo sh -c "
+set -e
+mount -o remount,rw /boot
+cp '$src' /boot/imx28-pwsh5.dtb
+sync
+mount -o remount,ro /boot
+cat > /etc/X11/xorg.conf.d/98-brain-rotation.conf <<CONF
+Section \"InputClass\"
+	Identifier \"brain touch rotation\"
+	MatchProduct \"mxs-lradc-ts\"
+	Option \"TransformationMatrix\" \"$m\"
+EndSection
+CONF
+echo $new > /etc/brain-rotation
+"
+sleep 3
+sudo systemctl reboot

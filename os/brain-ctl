@@ -1,0 +1,41 @@
+#!/bin/sh
+# brain-ctl: comandi di sistema per l'interfaccia (BrainShell).
+#   brightness [0-100]   legge o imposta la retroilluminazione
+#   volume [0-100]       legge o imposta il volume
+#   screen off|on        spegne o riaccende la retroilluminazione
+#   suspend [SECONDI]    sospende (risveglio: tasto, cavo USB o dopo SECONDI)
+#   rotate [0|1|2]       cambia orientamento (riavvia)
+#   screenshot           salva un PNG in ~/Immagini e ne stampa il percorso
+#   poweroff | reboot
+#   dictionary           riavvia nel dizionario SHARP (serve togliere la microSD)
+set -e
+bl() { ls -d /sys/class/backlight/* 2>/dev/null | head -1; }
+case "$1" in
+brightness)
+	B=$(bl); [ -n "$B" ] || { echo 100; exit 0; }
+	max=$(cat "$B/max_brightness")
+	if [ -z "$2" ]; then
+		echo $(( ($(cat "$B/brightness") * 100 + max / 2) / max ))
+	else
+		v=$(( ($2 * max + 50) / 100 )); [ "$v" -lt 1 ] && v=1; [ "$v" -gt "$max" ] && v=$max
+		echo "$v" | sudo tee "$B/brightness" >/dev/null
+	fi ;;
+volume)
+	if [ -z "$2" ]; then
+		amixer -c0 sget 'Playback' 2>/dev/null | sed -n 's/.*\[\([0-9]*\)%\].*/\1/p' | head -1
+	else
+		amixer -q -c0 sset 'Playback' "$2%" 2>/dev/null
+		[ "$2" -gt 0 ] && amixer -q -c0 sset 'Speaker' on 2>/dev/null || true
+	fi ;;
+screen)
+	# off|on: retroilluminazione (bl_power: 0 = accesa, 4 = spenta)
+	B=$(bl); [ -n "$B" ] || exit 0
+	case "$2" in off) v=4 ;; on) v=0 ;; *) exit 1 ;; esac
+	echo $v | sudo tee "$B/bl_power" >/dev/null ;;
+suspend)    exec sudo /usr/local/sbin/brain-suspend $2 ;;
+rotate)     exec /usr/local/bin/brain-rotate $2 ;;
+screenshot) exec /usr/local/bin/brain-screenshot ;;
+poweroff)   sync; exec sudo systemctl poweroff ;;
+reboot)     sync; exec sudo systemctl reboot ;;
+*) echo "uso: brain-ctl brightness|volume [N] | rotate | screenshot | poweroff | reboot" >&2; exit 1 ;;
+esac

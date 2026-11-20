@@ -1,0 +1,73 @@
+#!/bin/bash
+# Finto brainplay per le prove di Musica e Video.
+#
+#   brainplay --slave --no-window FILE   protocollo "slave" (vedi player/src/slave.c)
+#   brainplay FILE                       "video": annota la chiamata e resta 1 s
+#
+# Annota avvii, comandi e uscite in $BRAIN_CTL_STATE/player.log. La durata
+# finta e' $FAKE_DUR secondi (default 20) oppure la riga "dur=N" dentro il
+# file; "title=..." e "artist=..." nel file diventano le righe di stato.
+S=${BRAIN_CTL_STATE:-/tmp/brain-ctl-state}
+mkdir -p "$S"
+log() { echo "$(date +%s.%N | cut -c1-14) [$$] $*" >> "$S/player.log"; }
+if [ "$1" != "--slave" ]; then
+	log "video $*"
+	sleep "${FAKE_VIDEO_SECS:-1}"
+	exit 0
+fi
+file="${@: -1}"
+if [ ! -r "$file" ] || grep -aq '^broken' "$file"; then
+	log "errore $file"
+	echo "brainplay: impossibile aprire $file" >&2
+	exit 1
+fi
+name=$(basename "$file")
+dur=$(grep -a '^dur=' "$file" | head -1 | cut -d= -f2)
+title=$(grep -a '^title=' "$file" | head -1 | cut -d= -f2-)
+artist=$(grep -a '^artist=' "$file" | head -1 | cut -d= -f2-)
+dur=${dur:-${FAKE_DUR:-20}}
+end=$((dur * 10)); pos=0; state=playing; vol=100
+trap 'log "term $name"; exit 0' TERM
+log "start $name"
+echo "title ${title:-${name%.*}}"
+[ -n "$artist" ] && echo "artist $artist"
+echo "audio mp3 44100 Hz 2 ch"
+echo "dur $dur.0"
+echo "volume $vol"
+echo "state $state"
+echo "pos 0.0"
+say_pos() { echo "pos $((pos / 10)).$((pos % 10))"; }
+while :; do
+	if read -r -t 0.5 cmd arg; then
+		log "cmd $cmd $arg"
+		case "$cmd" in
+		pause) [ $state = playing ] && { state=paused; echo "state paused"; } ;;
+		play) [ $state = ended ] && pos=0; [ $state != playing ] && { state=playing; echo "state playing"; } ;;
+		toggle) if [ $state = playing ]; then state=paused; else [ $state = ended ] && pos=0; state=playing; fi
+			echo "state $state" ;;
+		seek)	case "$arg" in
+			+*|-*) pos=$((pos + ${arg%%.*} * 10)) ;;
+			*) pos=$((${arg%%.*} * 10)) ;;
+			esac
+			[ $pos -lt 0 ] && pos=0; [ $pos -gt $end ] && pos=$end
+			say_pos ;;
+		volume) vol=$arg; echo "volume $vol" ;;
+		status) echo "dur $dur.0"; echo "volume $vol"; echo "state $state"; say_pos ;;
+		quit|stop) log "quit $name"; exit 0 ;;
+		*) echo "error unknown command: $cmd" ;;
+		esac
+	elif [ $? -gt 128 ]; then
+		# mezzo secondo senza comandi
+		if [ $state = playing ]; then
+			pos=$((pos + 5))
+			if [ $pos -ge $end ]; then
+				pos=$end; state=ended; say_pos; echo "state ended"; log "ended $name"
+			else
+				say_pos
+			fi
+		fi
+	else
+		log "eof $name"	# chi ci ha lanciato ha chiuso lo stdin
+		exit 0
+	fi
+done

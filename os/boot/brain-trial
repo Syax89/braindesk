@@ -1,0 +1,15 @@
+#!/bin/sh
+# brain-trial [zImage] [dtb]: copia (se indicati) kernel e device tree di prova
+# in /boot e chiede a U-Boot di avviarli UNA volta al prossimo riavvio.
+# Se la prova si blocca, premere reset: riparte il kernel normale.
+set -e
+if [ -n "$1" ]; then
+	sudo mount -o remount,rw /boot
+	sudo cp "$1" /boot/zImage.test
+	sudo cp "${2:-/boot/imx28-pwsh5.dtb}" /boot/imx28-pwsh5.dtb.test
+	sync; sudo mount -o remount,ro /boot
+fi
+[ -e /boot/zImage.test ] && [ -e /boot/imx28-pwsh5.dtb.test ] || { echo "mancano i file di prova in /boot" >&2; exit 1; }
+sudo busybox devmem 0x800560b0 32 0x4252414e
+sleep 1
+[ "$(sudo busybox devmem 0x800560b0)" = 0x4252414E ] && echo "prova armata" || { echo "registro non scritto" >&2; exit 1; }

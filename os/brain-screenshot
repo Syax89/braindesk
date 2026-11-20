@@ -1,0 +1,6 @@
+#!/bin/sh
+# brain-screenshot [FILE.png]: cattura i pixel che il pannello sta mostrando
+out=${1:-$HOME/Immagini/schermo-$(date +%Y%m%d-%H%M%S).png}
+t=$(mktemp); trap 'rm -f "$t" "$t.size"' EXIT
+sudo /usr/local/bin/brainshot > "$t" 2> "$t.size" || { cat "$t.size" >&2; exit 1; }
+ffmpeg -loglevel error -y -f rawvideo -pix_fmt rgb565le -s "$(cat "$t.size")" -i "$t" -frames:v 1 "$out" && echo "$out"

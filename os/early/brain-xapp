@@ -1,0 +1,22 @@
+#!/bin/sh
+# brain-xapp CMD [ARG...]: un server X solo per un'app esterna, chiamato
+# da brainshell (backend DRM) con "sudo -n" quando l'utente apre Terminale,
+# un video... La shell ha gia' lasciato il master DRM e i dispositivi di
+# ingresso. Stesso Xorg, stessa configurazione e stesse opzioni di brain-ui
+# (piu' -br: radice nera dove l'app non arriva); nessun gestore di finestre:
+# l'app si apre a tutto schermo da se' (brainplay) o con la geometria che
+# le passa la shell (st -g). xinit termina X quando l'app esce; la shell
+# vede finire questo processo e si riprende lo schermo. SIGTERM (Ctrl+Alt+
+# Esc nella shell, inoltrato da sudo) chiude app e X.
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+[ $# -ge 1 ] || { echo "uso: brain-xapp COMANDO [ARGOMENTI...]" >&2; exit 2; }
+# "--" separerebbe le opzioni del server X (che gira come root): vietato
+for a; do [ "$a" = "--" ] && { echo "brain-xapp: argomento non ammesso" >&2; exit 2; }; done
+exec 2>>/tmp/brain-xapp.log
+echo "brain-xapp: $* (utente ${SUDO_USER:-?}) a $(cut -d' ' -f1 /proc/uptime) s" >&2
+[ -s /etc/X11/brain-run.conf ] || /usr/local/sbin/brain-xconf
+BRAIN_XAPP_USER=${SUDO_USER:-user}
+export BRAIN_XAPP_USER
+exec nice -n -5 xinit /usr/local/sbin/brain-xapp-client "$@" -- /usr/lib/xorg/Xorg :0 vt2 \
+	-config brain-run.conf -nolisten tcp -noreset -novtswitch -s 0 -dpms -nocursor -br

@@ -1,0 +1,68 @@
+#!/bin/sh
+# brain-shell-session: l'interfaccia SENZA server X, avviata da brain-preinit
+# prima di systemd. Gira come root; brainshell gira come utente "user" e
+# disegna direttamente sul pannello (DRM) leggendo tocco e tasti da evdev.
+# X parte solo quando serve, per una singola app esterna (brain-xapp).
+#
+# Se brainshell muore viene riavviato. Si ripiega sulla sessione X di
+# sempre (brain-ui: Xorg + JWM + brainshell-x11) se il backend DRM non
+# parte (uscita 75) o se la shell cade 3 volte di fila entro 10 s: in quel
+# caso resta /run/brain-ui-x11. Per usare sempre X: touch /etc/brain-ui-x11.
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+exec >/tmp/brain-ui.log 2>&1
+echo "brain-shell-session: avvio a $(cut -d' ' -f1 /proc/uptime) s"
+
+U=user
+H=$(getent passwd $U | cut -d: -f6)
+[ -n "$H" ] || H=/home/$U
+R=/tmp/xdg-$U
+READY=$R/brainshell-ready
+mkdir -p -m 700 $R && chown $U: $R
+rm -f "$READY"
+
+fallback() {
+	echo "brain-shell-session: ripiego sulla sessione X ($1) a $(cut -d' ' -f1 /proc/uptime) s"
+	echo "$1" > /run/brain-ui-x11
+	exec /usr/local/sbin/brain-ui
+}
+
+# i permessi dei dispositivi li darebbe udev, che pero' arriva molto dopo;
+# la shell non e' root: le servono pannello (video) e ingresso (input)
+# (un processo per gruppo: ogni fork+exec costa su questa CPU)
+grp() {
+	g=$1; shift; l=
+	for d; do [ -e "$d" ] && l="$l $d"; done
+	[ -n "$l" ] && chgrp $g $l && chmod 660 $l
+}
+grp video /dev/pxp /dev/dri/card0 /dev/fb0
+grp audio /dev/snd/*
+grp input /dev/input/event*
+# la console di testo non deve oscurare il pannello ne' lampeggiare
+# (con la shell master DRM il kernel non la mostra comunque)
+{ echo 0 > /sys/module/kernel/parameters/consoleblank; } 2>/dev/null
+{ echo 0 > /sys/class/graphics/fbcon/cursor_blink; } 2>/dev/null
+[ -e /dev/dri/card0 ] || fallback "manca /dev/dri/card0"
+[ -x /usr/local/bin/brainshell ] || fallback "manca /usr/local/bin/brainshell"
+
+# configurazione di X per le app esterne: dopo, a interfaccia gia' su
+( sleep 3; /usr/local/sbin/brain-xconf ) &
+
+fails=0
+while :; do
+	t0=$(cut -d. -f1 /proc/uptime)
+	cd "$H" 2>/dev/null || cd /
+	nice -n -5 env -i HOME="$H" USER=$U LOGNAME=$U SHELL=/bin/bash LANG=C.UTF-8 \
+		XDG_RUNTIME_DIR=$R PATH=/usr/local/bin:/usr/bin:/bin \
+		BRAIN_CTL=/usr/local/bin/brain-ctl BRAINSHELL_BACKEND=drm \
+		BRAINSHELL_READY_FILE="$READY" BRAINSHELL_TIMING=1 \
+		setpriv --reuid $U --regid $U --init-groups /usr/local/bin/brainshell
+	code=$?
+	t1=$(cut -d. -f1 /proc/uptime)
+	echo "brain-shell-session: brainshell uscito con $code a ${t1} s"
+	[ -e /run/brain-nodesktop ] && exit 0
+	[ $code = 75 ] && fallback "backend DRM non disponibile"
+	if [ $code != 0 ] && [ $((t1 - t0)) -lt 10 ]; then fails=$((fails + 1)); else fails=0; fi
+	[ $fails -ge 3 ] && fallback "brainshell e' caduto 3 volte di fila"
+	sleep 1
+done

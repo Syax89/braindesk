@@ -1,0 +1,48 @@
+<?xml version="1.0"?>
+<!-- JWM sotto BrainShell: gestisce solo le finestre delle app esterne.
+     Niente barre proprie (le fa BrainShell), titoli alti e pulsanti grandi
+     per il dito, finestre sempre a tutto schermo. -->
+<JWM>
+    <Group>
+        <Option>maximized</Option>
+        <Option>noborder</Option>
+    </Group>
+    <Group>
+        <Name>brainshell</Name>
+        <Option>notitle</Option>
+        <Option>nolist</Option>
+        <Option>noborder</Option>
+    </Group>
+    <Group>
+        <Name>brainplay</Name>
+        <Option>notitle</Option>
+        <Option>noborder</Option>
+    </Group>
+    <WindowStyle>
+        <Font>DejaVu Sans-11:bold</Font>
+        <Width>0</Width>
+        <Height>36</Height>
+        <Corner>0</Corner>
+        <Foreground>#c9d1e0</Foreground>
+        <Background>#1b1f2b</Background>
+        <Active>
+            <Foreground>#ffffff</Foreground>
+            <Background>#232838</Background>
+        </Active>
+    </WindowStyle>
+    <MenuStyle>
+        <Font>DejaVu Sans-12</Font>
+        <Foreground>#e6e9f0</Foreground>
+        <Background>#1b1f2b</Background>
+        <Active><Foreground>#ffffff</Foreground><Background>#3d6fd9</Background></Active>
+    </MenuStyle>
+    <FocusModel>click</FocusModel>
+    <SnapMode>none</SnapMode>
+    <MoveMode>opaque</MoveMode>
+    <ResizeMode>opaque</ResizeMode>
+    <DoubleClickSpeed>500</DoubleClickSpeed>
+    <DoubleClickDelta>12</DoubleClickDelta>
+    <Desktops width="1" height="1"/>
+    <Key key="Escape" mask="A">close</Key>
+    <Key key="Tab" mask="A">nextstacked</Key>
+</JWM>

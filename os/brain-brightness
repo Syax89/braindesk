@@ -1,0 +1,9 @@
+#!/bin/sh
+# brain-brightness +|-|N : luminosita' della retroilluminazione (0..max)
+B=$(ls -d /sys/class/backlight/* | head -1)
+max=$(cat $B/max_brightness); cur=$(cat $B/brightness)
+case "$1" in
+  +) v=$((cur + 1)) ;; -) v=$((cur - 1)) ;; *) v=${1:-$max} ;;
+esac
+[ $v -lt 1 ] && v=1; [ $v -gt $max ] && v=$max
+echo $v | sudo tee $B/brightness >/dev/null

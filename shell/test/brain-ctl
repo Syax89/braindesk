@@ -1,0 +1,41 @@
+#!/bin/sh
+# Finto brain-ctl per le prove: tiene lo stato in $BRAIN_CTL_STATE e annota
+# ogni chiamata in $BRAIN_CTL_STATE/log (con i millisecondi, per verificare
+# che i cursori non lancino troppi processi).
+S=${BRAIN_CTL_STATE:-/tmp/brain-ctl-state}
+mkdir -p "$S"
+echo "$(date +%s.%N | cut -c1-14) $*" >> "$S/log"
+# BRAIN_CTL_DELAY=secondi: finge un helper lento (l'interfaccia non deve bloccarsi)
+[ -n "$BRAIN_CTL_DELAY" ] && sleep "$BRAIN_CTL_DELAY"
+case "$1" in
+brightness|volume)
+	if [ -n "$2" ]; then
+		echo "$2" > "$S/$1"
+	else
+		cat "$S/$1" 2>/dev/null || { [ "$1" = brightness ] && echo 70 || echo 45; }
+	fi ;;
+screenshot)
+	d=${HOME:-/tmp}/Immagini; mkdir -p "$d"
+	f="$d/schermo-$(date +%Y%m%d-%H%M%S).png"
+	import -window root "$f" 2>/dev/null || : > "$f"
+	echo "$f" ;;
+screen)
+	# BRAIN_CTL_NO_SCREEN=1: finge un helper che non conosce il verbo
+	[ -n "$BRAIN_CTL_NO_SCREEN" ] && exit 1
+	echo "$2" > "$S/screen" ;;
+rotate|poweroff|reboot)
+	: ;;
+suspend)
+	# come quello vero: ritorna solo "al risveglio". Si dorme $2 secondi
+	# (sveglia RTC) ma al massimo BRAIN_CTL_SUSPEND_S (default 2): il
+	# CLOCK_BOOTTIME della shell avanza come in una sospensione vera.
+	# BRAIN_CTL_SUSPEND_FAIL=1: /sys/power/state rifiuta
+	[ -n "$BRAIN_CTL_SUSPEND_FAIL" ] && exit 1
+	t=${BRAIN_CTL_SUSPEND_S:-2}
+	[ -n "$2" ] && [ "$2" -lt "$t" ] && t=$2
+	sleep "$t"
+	echo "$(date +%s.%N | cut -c1-14) resume" >> "$S/log" ;;
+*)
+	echo "uso: brain-ctl brightness|volume [N] | screen on|off | rotate | screenshot | suspend [S] | poweroff | reboot" >&2
+	exit 2 ;;
+esac

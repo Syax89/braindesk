@@ -1,0 +1,64 @@
+#!/bin/sh
+# brain-ui: server grafico + interfaccia, avviati da brain-preinit prima di
+# systemd (e quindi prima di udev e di logind). Gira come root; l'interfaccia
+# gira come utente "user". Se l'interfaccia si chiude viene riavviata.
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin
+export PATH
+exec >/tmp/brain-ui.log 2>&1
+echo "brain-ui: avvio a $(cut -d' ' -f1 /proc/uptime) s"
+
+# i permessi dei dispositivi li darebbe udev, che pero' arriva molto dopo
+for d in /dev/pxp /dev/dri/card0 /dev/fb0; do
+	[ -e "$d" ] && chgrp video "$d" && chmod 660 "$d"
+done
+for d in /dev/snd/*; do
+	[ -e "$d" ] && chgrp audio "$d" && chmod 660 "$d"
+done
+
+# dispositivi di input per nome (senza udev X non li trova da solo)
+ev() {
+	for e in /sys/class/input/event*; do
+		[ "$(cat "$e/device/name" 2>/dev/null)" = "$1" ] && { echo "/dev/input/${e##*/}"; return; }
+	done
+}
+ts=$(ev mxs-lradc-ts); kb=$(ev brain-kbd-gpio)
+cal=$(sed -n 's/.*"Calibration"[[:space:]]*"\(.*\)".*/\1/p' /etc/X11/xorg.conf.d/99-calibrator.conf 2>/dev/null | head -1)
+case "$(cat /etc/brain-rotation 2>/dev/null)" in
+	1) m="0 -1 1 1 0 0 0 0 1" ;;
+	2) m="0 1 0 -1 0 1 0 0 1" ;;
+	*) m="1 0 0 0 1 0 0 0 1" ;;
+esac
+conf=/etc/X11/brain-run.conf
+{
+	cat /etc/X11/brain-xorg.conf
+	echo 'Section "ServerLayout"'
+	echo '	Identifier "brain"'
+	echo '	Screen "screen"'
+	[ -n "$ts" ] && echo '	InputDevice "touch" "CorePointer"'
+	[ -n "$kb" ] && echo '	InputDevice "tasti" "CoreKeyboard"'
+	echo 'EndSection'
+	[ -n "$ts" ] && cat <<EOF
+Section "InputDevice"
+	Identifier "touch"
+	Driver "evdev"
+	Option "Device" "$ts"
+	${cal:+Option \"Calibration\" \"$cal\"}
+	Option "TransformationMatrix" "$m"
+EndSection
+EOF
+	[ -n "$kb" ] && cat <<EOF
+Section "InputDevice"
+	Identifier "tasti"
+	Driver "evdev"
+	Option "Device" "$kb"
+	Option "XkbLayout" "us"
+EndSection
+EOF
+} > "$conf"
+
+while :; do
+	nice -n -5 xinit /usr/local/bin/brain-session -- /usr/lib/xorg/Xorg :0 vt2 \
+		-config brain-run.conf -nolisten tcp -noreset -novtswitch -s 0 -dpms -nocursor
+	[ -e /run/brain-nodesktop ] && break
+	sleep 1
+done

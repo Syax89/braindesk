@@ -1,0 +1,3 @@
+# /etc/sudoers.d/brain-xapp (mode 0440): brainshell (utente "user", senza X)
+# avvia un server X per una sola app esterna. Vedi /usr/local/sbin/brain-xapp.
+user ALL=(root) NOPASSWD: /usr/local/sbin/brain-xapp

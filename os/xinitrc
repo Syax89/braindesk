@@ -1,0 +1,11 @@
+#!/bin/sh
+# Sessione BrainDesk dell'utente: JWM gestisce le finestre delle app,
+# BrainShell e' l'interfaccia touch (home, barra di stato, app integrate).
+xset s off -dpms 2>/dev/null
+xsetroot -solid '#12141c' -cursor_name left_ptr
+if [ -x /usr/local/bin/brainshell ] && [ ! -e "$HOME/.brain-classic" ]; then
+	jwm -f "$HOME/.jwmrc-shell" &
+	exec /usr/local/bin/brainshell
+fi
+[ -f "$HOME/.wallpaper.jpg" ] && feh --no-fehbg --bg-fill "$HOME/.wallpaper.jpg"
+exec jwm

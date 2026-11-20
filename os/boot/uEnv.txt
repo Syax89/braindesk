@@ -1,0 +1,3 @@
+bootcmd=run brainboot
+brainboot=run selectsd; setexpr.l bc *0x800560a0 + 1; mw.l 0x800560a0 ${bc}; setenv image zImage; setenv fdt_file imx28-pwsh5.dtb; if itest.l *0x800560b0 == 0x4252414e; then mw.l 0x800560b0 0; setenv image zImage.test; setenv fdt_file imx28-pwsh5.dtb.test; setenv bootargs_custom ${bootargs_custom} brain.boot=test; else if itest ${bc} -ge 3; then run rescue; setenv bootargs_custom ${bootargs_custom} brain.boot=rescue; fi; fi; run mmcboot; run rescue; run mmcboot
+rescue=setenv image zImage.brainux; setenv fdt_file imx28-pwsh5.dtb.brainux

@@ -1,0 +1,118 @@
+<?xml version="1.0"?>
+<!-- BrainDesk: JWM per lo schermo 854x480 e il touch del SHARP Brain -->
+<JWM>
+    <RootMenu onroot="123" height="30">
+        <Program label="Terminale">st -f "DejaVu Sans Mono:size=10"</Program>
+        <Program label="File">xfe</Program>
+        <Program label="Editor di testo">xfw</Program>
+        <Separator/>
+        <Program label="Video (PXP)">xfe ~/Video</Program>
+        <Program label="Demo video PXP">brain-video /usr/local/share/brain/demo.mp4</Program>
+        <Program label="Demo video a schermo intero">brain-video --schermo-intero /usr/local/share/brain/demo.mp4</Program>
+        <Program label="Immagini">xfe ~/Immagini</Program>
+        <Program label="Screenshot">brain-screenshot</Program>
+        <Separator/>
+        <Menu label="Volume">
+            <Program label="Volume +">amixer -q -c0 sset Playback 10%+</Program>
+            <Program label="Volume -">amixer -q -c0 sset Playback 10%-</Program>
+            <Program label="Prova altoparlante">speaker-test -c2 -t sine -f 660 -l 1 -s 1</Program>
+        </Menu>
+        <Menu label="Schermo">
+            <Program label="Ruota schermo">setsid brain-rotate</Program>
+            <Program label="Luminosità +">brain-brightness +</Program>
+            <Program label="Luminosità -">brain-brightness -</Program>
+            <Program label="Calibra touch">sudo rm -f /etc/X11/xorg.conf.d/99-calibrator.conf; xinput_calibrator --output-filename /tmp/cal.conf &amp;&amp; sudo cp /tmp/cal.conf /etc/X11/xorg.conf.d/99-calibrator.conf</Program>
+        </Menu>
+        <Separator/>
+        <Restart label="Ricarica desktop"/>
+        <Program label="Riavvia">sudo systemctl reboot</Program>
+        <Program label="Spegni">sudo systemctl poweroff</Program>
+    </RootMenu>
+
+    <Group>
+        <Option>maximized</Option>
+    </Group>
+    <Group>
+        <Name>brainbar</Name>
+        <Option>nolist</Option>
+    </Group>
+
+    <!-- barra di avvio in alto: pulsanti grandi per il touch -->
+    <Tray x="0" y="0" height="40" autohide="off" layer="above" halign="center">
+        <TrayButton label="  Terminale  ">exec:st -f "DejaVu Sans Mono:size=10"</TrayButton>
+        <Spacer width="6"/>
+        <TrayButton label="  File  ">exec:xfe</TrayButton>
+        <Spacer width="6"/>
+        <TrayButton label="  Editor  ">exec:xfw</TrayButton>
+        <Spacer width="6"/>
+        <TrayButton label="  Video  ">exec:xfe ~/Video</TrayButton>
+        <Spacer width="6"/>
+        <TrayButton label="  Ruota  ">exec:setsid brain-rotate</TrayButton>
+        <Spacer width="6"/>
+        <TrayButton label="  Spegni  ">exec:sudo systemctl poweroff</TrayButton>
+    </Tray>
+
+    <Tray x="0" y="-1" height="30" autohide="off" layer="above">
+        <TrayButton label=" ☰ Brain ">root:1</TrayButton>
+        <Spacer width="4"/>
+        <TaskList maxwidth="200"/>
+        <Swallow name="brainbar" width="70">brainbar</Swallow>
+        <Clock format="%H:%M"><Button mask="1">exec:xterm -e cal -3</Button></Clock>
+    </Tray>
+
+    <WindowStyle decorations="flat">
+        <Font>DejaVu Sans-11:bold</Font>
+        <Width>3</Width>
+        <Height>28</Height>
+        <Foreground>#ffffff</Foreground>
+        <Background>#3a4a66</Background>
+        <Outline>#1d2433</Outline>
+        <Opacity>1.0</Opacity>
+        <Active>
+            <Foreground>#ffffff</Foreground>
+            <Background>#c0392b</Background>
+            <Outline>#1d2433</Outline>
+            <Opacity>1.0</Opacity>
+        </Active>
+    </WindowStyle>
+    <TrayStyle decorations="flat">
+        <Font>DejaVu Sans-11</Font>
+        <Background>#22293a</Background>
+        <Foreground>#ffffff</Foreground>
+        <Opacity>1.0</Opacity>
+    </TrayStyle>
+    <TrayButtonStyle decorations="flat">
+        <Font>DejaVu Sans-12:bold</Font>
+        <Foreground>#ffffff</Foreground>
+        <Background>#3a4a66</Background>
+        <Active><Foreground>#ffffff</Foreground><Background>#c0392b</Background></Active>
+    </TrayButtonStyle>
+    <TaskListStyle>
+        <Font>DejaVu Sans-10</Font>
+        <Active><Foreground>#ffffff</Foreground><Background>#c0392b</Background></Active>
+        <Foreground>#dddddd</Foreground>
+        <Background>#2c3550</Background>
+    </TaskListStyle>
+    <MenuStyle decorations="flat">
+        <Font>DejaVu Sans-13</Font>
+        <Foreground>#ffffff</Foreground>
+        <Background>#22293a</Background>
+        <Active><Foreground>#ffffff</Foreground><Background>#c0392b</Background></Active>
+        <Opacity>1.0</Opacity>
+    </MenuStyle>
+
+    <DoubleClickSpeed>500</DoubleClickSpeed>
+    <DoubleClickDelta>6</DoubleClickDelta>
+    <FocusModel>click</FocusModel>
+    <SnapMode distance="10">border</SnapMode>
+    <MoveMode>opaque</MoveMode>
+    <ResizeMode>opaque</ResizeMode>
+    <Desktops width="1" height="1"/>
+
+    <!-- tasti del Brain: Alt = 音声, Ctrl = pagina su -->
+    <Key mask="A" key="Tab">nextstacked</Key>
+    <Key mask="A" key="F4">close</Key>
+    <Key mask="C" key="Escape">root:1</Key>
+    <Key key="Insert">root:1</Key>
+    <Key mask="A" key="Return">exec:st -f "DejaVu Sans Mono:size=10"</Key>
+</JWM>

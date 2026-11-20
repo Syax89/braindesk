@@ -1,0 +1,2 @@
+# ~/.bash_profile: il desktop parte da brain-preinit/brain-ui, non da qui.
+[ -f ~/.bashrc ] && . ~/.bashrc

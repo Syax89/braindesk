@@ -1,0 +1,164 @@
+#!/usr/bin/env python3
+"""Bake the fonts and icons of brainplay into a C file.
+
+brainplay draws its own text: no Xft/fontconfig (their start-up costs
+hundreds of milliseconds on the Brain).  Glyphs are 4-bit alpha masks
+(two pixels per byte, rows padded to a byte) rendered here from DejaVu Sans.
+
+    python3 tools/genassets.py src/assets.c     (inside the brainplay-dev image)
+"""
+import sys
+from PIL import Image, ImageDraw, ImageFont
+
+SANS = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+
+# Latin-1, Latin Extended-A, some punctuation; U+25A1 is the fallback glyph
+TEXT = (list(range(0x20, 0x7F)) + list(range(0xA0, 0x180)) +
+        [0x2013, 0x2014, 0x2018, 0x2019, 0x201C, 0x201D, 0x2022, 0x2026, 0x20AC, 0x25A1])
+DIGITS = [ord(c) for c in " -/0123456789:"]
+
+FONTS = [
+    # name,        file, px, charset
+    ("font_small", BOLD, 16, TEXT),    # control bar: times, volume
+    ("font_text",  SANS, 21, TEXT),    # artist / album / messages
+    ("font_title", BOLD, 30, TEXT),    # title of the audio view
+    ("font_big",   BOLD, 76, DIGITS),  # big elapsed time of the audio view
+]
+
+
+def pack_a4(im):
+    """8-bit grey image -> rows of 4-bit alpha, high nibble first."""
+    w, h = im.size
+    px = im.load()
+    out = bytearray()
+    for y in range(h):
+        for x in range(0, w, 2):
+            hi = (px[x, y] + 8) * 15 // 255
+            lo = (px[x + 1, y] + 8) * 15 // 255 if x + 1 < w else 0
+            out.append((min(hi, 15) << 4) | min(lo, 15))
+    return out
+
+
+def bake_font(path, size, cps):
+    f = ImageFont.truetype(path, size)
+    ascent, descent = f.getmetrics()
+    glyphs, data = [], bytearray()
+    for cp in sorted(set(cps)):
+        ch = chr(cp)
+        adv = int(round(f.getlength(ch)))
+        W, H = adv + 2 * size, ascent + descent + size
+        im = Image.new("L", (W, H), 0)
+        ox, oy = size, ascent + size // 2
+        ImageDraw.Draw(im).text((ox, oy), ch, font=f, fill=255, anchor="ls")
+        bb = im.getbbox()
+        if bb is None:
+            glyphs.append((cp, 0, 0, 0, 0, adv, len(data)))
+            continue
+        x0, y0, x1, y1 = bb
+        crop = im.crop(bb)
+        glyphs.append((cp, x1 - x0, y1 - y0, x0 - ox, y0 - oy, adv, len(data)))
+        data += pack_a4(crop)
+    return ascent, descent, glyphs, data
+
+
+def icon(size, draw_fn, ss=4):
+    S = size * ss
+    im = Image.new("L", (S, S), 0)
+    draw_fn(ImageDraw.Draw(im), S)
+    return im.resize((size, size), Image.LANCZOS)
+
+
+def i_play(d, S):
+    d.polygon([(S * 0.26, S * 0.14), (S * 0.26, S * 0.86), (S * 0.86, S * 0.5)], fill=255)
+
+
+def i_pause(d, S):
+    d.rounded_rectangle([S * 0.20, S * 0.14, S * 0.42, S * 0.86], radius=S * 0.04, fill=255)
+    d.rounded_rectangle([S * 0.58, S * 0.14, S * 0.80, S * 0.86], radius=S * 0.04, fill=255)
+
+
+def speaker(d, S, x=0.06):
+    d.polygon([(S * x, S * 0.36), (S * (x + 0.16), S * 0.36), (S * (x + 0.40), S * 0.14),
+               (S * (x + 0.40), S * 0.86), (S * (x + 0.16), S * 0.64), (S * x, S * 0.64)], fill=255)
+
+
+def i_voldown(d, S):
+    speaker(d, S)
+    d.rounded_rectangle([S * 0.60, S * 0.445, S * 0.94, S * 0.555], radius=S * 0.03, fill=255)
+
+
+def i_volup(d, S):
+    speaker(d, S)
+    d.rounded_rectangle([S * 0.58, S * 0.445, S * 0.96, S * 0.555], radius=S * 0.03, fill=255)
+    d.rounded_rectangle([S * 0.715, S * 0.31, S * 0.825, S * 0.69], radius=S * 0.03, fill=255)
+
+
+def i_close(d, S):
+    w = int(S * 0.12)
+    d.line([(S * 0.20, S * 0.20), (S * 0.80, S * 0.80)], fill=255, width=w)
+    d.line([(S * 0.80, S * 0.20), (S * 0.20, S * 0.80)], fill=255, width=w)
+    r = w / 2
+    for x, y in ((0.20, 0.20), (0.80, 0.80), (0.80, 0.20), (0.20, 0.80)):
+        d.ellipse([S * x - r, S * y - r, S * x + r, S * y + r], fill=255)
+
+
+def i_knob(d, S):
+    d.ellipse([S * 0.04, S * 0.04, S * 0.96, S * 0.96], fill=255)
+
+
+def i_note(d, S):
+    # two beamed quavers
+    d.ellipse([S * 0.10, S * 0.66, S * 0.38, S * 0.90], fill=255)
+    d.ellipse([S * 0.56, S * 0.56, S * 0.84, S * 0.80], fill=255)
+    d.rectangle([S * 0.30, S * 0.20, S * 0.38, S * 0.78], fill=255)
+    d.rectangle([S * 0.76, S * 0.10, S * 0.84, S * 0.68], fill=255)
+    d.polygon([(S * 0.30, S * 0.20), (S * 0.84, S * 0.10), (S * 0.84, S * 0.26), (S * 0.30, S * 0.36)], fill=255)
+
+
+ICONS = [
+    ("icon_play", 32, i_play), ("icon_pause", 32, i_pause),
+    ("icon_voldown", 32, i_voldown), ("icon_volup", 32, i_volup),
+    ("icon_close", 32, i_close), ("icon_knob", 20, i_knob),
+    ("icon_note", 96, i_note),
+]
+
+
+def c_bytes(name, data):
+    out = ["static const uint8_t %s[%d] = {" % (name, max(len(data), 1))]
+    for i in range(0, len(data), 20):
+        out.append("\t" + ",".join("%d" % b for b in data[i:i + 20]) + ",")
+    if not data:
+        out.append("\t0,")
+    out.append("};")
+    return "\n".join(out)
+
+
+def main():
+    dst = sys.argv[1] if len(sys.argv) > 1 else "src/assets.c"
+    o = ["/* Generated by tools/genassets.py from DejaVu Sans - do not edit. */",
+         '#include "canvas.h"', ""]
+    total = 0
+    for name, path, size, cps in FONTS:
+        ascent, descent, glyphs, data = bake_font(path, size, cps)
+        total += len(data) + 12 * len(glyphs)
+        o.append(c_bytes(name + "_data", data))
+        o.append("static const struct glyph %s_glyphs[%d] = {" % (name, len(glyphs)))
+        for cp, w, h, xo, yo, adv, off in glyphs:
+            o.append("\t{ 0x%04x, %d, %d, %d, %d, %d, %d }," % (cp, w, h, xo, yo, adv, off))
+        o.append("};")
+        o.append("const struct font %s = { %d, %d, %d, %s_glyphs, %s_data };" %
+                 (name, ascent, descent, len(glyphs), name, name))
+        o.append("")
+    for name, size, fn in ICONS:
+        data = pack_a4(icon(size, fn))
+        total += len(data)
+        o.append(c_bytes(name + "_data", data))
+        o.append("const struct icon %s = { %d, %d, %s_data };" % (name, size, size, name))
+        o.append("")
+    open(dst, "w").write("\n".join(o))
+    print("%s: %d bytes of glyph and icon data" % (dst, total))
+
+
+if __name__ == "__main__":
+    main()

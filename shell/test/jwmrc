@@ -1,0 +1,23 @@
+<?xml version="1.0"?>
+<!-- JWM per le prove di brainshell: come sul Brain (finestre massimizzate),
+     ma senza le barre di JWM, sostituite dalla shell. -->
+<JWM>
+    <Group>
+        <Option>maximized</Option>
+    </Group>
+    <WindowStyle decorations="flat">
+        <Font>DejaVu Sans-11:bold</Font>
+        <Width>3</Width>
+        <Height>28</Height>
+        <Foreground>#ffffff</Foreground>
+        <Background>#222935</Background>
+        <Outline>#0e1116</Outline>
+        <Active>
+            <Foreground>#ffffff</Foreground>
+            <Background>#2f3847</Background>
+            <Outline>#0e1116</Outline>
+        </Active>
+    </WindowStyle>
+    <FocusModel>click</FocusModel>
+    <Desktops width="1" height="1"/>
+</JWM>

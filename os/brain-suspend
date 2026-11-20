@@ -1,0 +1,22 @@
+#!/bin/sh
+# brain-suspend [SECONDI]: sospende il Brain (RAM alimentata, tutto il resto
+# spento). Si risveglia col tasto di accensione, collegando il cavo USB o,
+# se indicato, dopo SECONDI (sveglia dell'orologio interno).
+# Va eseguito da root. Stampa quanto e' durata la sospensione.
+set -e
+if [ -n "$1" ]; then
+	python3 - "$1" <<'P'
+import fcntl, os, struct, sys, time
+t = time.gmtime(time.time() + int(sys.argv[1]))
+fd = os.open("/dev/rtc0", os.O_RDONLY)
+fcntl.ioctl(fd, 0x4028700f, struct.pack("BB2x9i", 1, 0, t.tm_sec, t.tm_min,
+            t.tm_hour, t.tm_mday, t.tm_mon - 1, t.tm_year - 1900, 0, 0, 0))
+P
+fi
+B=$(ls -d /sys/class/backlight/* 2>/dev/null | head -1)
+sync
+[ -n "$B" ] && echo 4 > "$B/bl_power"
+t0=$(date +%s)
+echo mem > /sys/power/state || true
+[ -n "$B" ] && echo 0 > "$B/bl_power"
+echo "sospeso per $(( $(date +%s) - t0 )) s"

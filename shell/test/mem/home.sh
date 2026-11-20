@@ -1,0 +1,21 @@
+# home, riquadro premuto, una vista che scorre, ritorno; memoria e righe inviate
+scene() {
+	echo "wait 400"
+	echo "stats"
+	echo "shot home"
+	echo "expect view=grid popups=0 dialog=0 screen=on xapp=idle suspended=0"
+	echo "press $SET 200"
+	echo "shot tile-pressed"
+	echo "release 700"
+	echo "expect view=settings"
+	echo "shot settings"
+	echo "drag $SCROLL 12 16 1200"
+	echo "shot settings-scrolled"
+	echo "tap $BACK 700"
+	echo "expect view=grid"
+	echo "stats"
+	echo "wait 1500"
+	echo "log INFO a riposo:"
+	echo "stats"
+	echo "rss"
+}

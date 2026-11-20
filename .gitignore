@@ -1,0 +1,30 @@
+# prodotti di compilazione
+build/
+build-*/
+*.o
+*.a
+out/
+player/third_party/
+player/tests/out/
+player/tests/clips/
+shell/shots/
+# binari ARM (pubblicati nelle release)
+os/brainshell
+os/brainshell-x11
+os/brainplay
+os/brainbar
+os/brainshot
+os/pxpvideo
+os/pxpwin
+driver/pxptest
+driver/pxpvideo
+driver/pxpwin
+driver/pxpscreen
+driver/panelread
+driver/dirtybench
+*.dtb
+zImage
+# file di sistema
+.DS_Store
+._*
+__pycache__/

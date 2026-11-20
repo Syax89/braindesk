@@ -1,0 +1,2 @@
+# /dev/pxp per gli utenti del gruppo video (lettore video in finestra)
+KERNEL=="pxp", GROUP="video", MODE="0660"

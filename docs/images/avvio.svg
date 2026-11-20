@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 330" font-family="DejaVu Sans, Helvetica, Arial, sans-serif">
+<rect width="900" height="330" fill="#ffffff"/>
+<text x="450" y="32" text-anchor="middle" font-size="22" font-weight="bold" fill="#1d2433">Tempo dall'avvio del kernel all'interfaccia</text>
+<g font-size="14">
+<text x="30" y="88" font-weight="bold">Brainux originale</text><rect x="250" y="70" width="600" height="28" fill="#c9c9c9"/><text x="840" y="89" text-anchor="end">≈ 85 s (desktop GTK)</text>
+<text x="30" y="148" font-weight="bold">BrainDesk con X</text><rect x="250" y="130" width="56" height="28" fill="#5468c4"/><text x="316" y="149">8,1 s</text>
+<text x="30" y="208" font-weight="bold">BrainDesk senza X</text><rect x="250" y="190" width="14" height="28" fill="#2a9d8f"/><text x="274" y="209" font-weight="bold" fill="#1d6b61">1,9 s</text>
+<line x1="250" y1="240" x2="850" y2="240" stroke="#888"/>
+<g font-size="12" fill="#555"><text x="250" y="258" text-anchor="middle">0</text><text x="391" y="258" text-anchor="middle">20 s</text><text x="532" y="258" text-anchor="middle">40 s</text><text x="673" y="258" text-anchor="middle">60 s</text><text x="814" y="258" text-anchor="middle">80 s</text></g>
+<text x="30" y="296" font-size="13" fill="#333">Senza X: kernel 1,6 s → interfaccia 0,24 s dopo. systemd (rete USB, SSH, audio) parte dopo, in parallelo.</text>
+</g>
+</svg>

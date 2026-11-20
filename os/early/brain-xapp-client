@@ -1,0 +1,15 @@
+#!/bin/sh
+# brain-xapp-client CMD [ARG...]: il "client" di xinit per brain-xapp. Gira
+# come root dentro il server X appena pronto: apre il display all'utente,
+# avvisa la shell ("ready" sullo stdout, che arriva a brainshell attraverso
+# xinit e sudo) e diventa l'app, come utente. Quando l'app esce, xinit
+# chiude X.
+U=${BRAIN_XAPP_USER:-user}
+H=$(getent passwd "$U" | cut -d: -f6)
+xhost +SI:localuser:"$U" >/dev/null 2>&1
+echo "brain-xapp: X pronto a $(cut -d' ' -f1 /proc/uptime) s" >&2
+echo ready
+cd "$H" 2>/dev/null || cd /
+exec env -i HOME="$H" USER="$U" LOGNAME="$U" SHELL=/bin/bash DISPLAY=:0 LANG=C.UTF-8 \
+	XDG_RUNTIME_DIR=/tmp/xdg-$U PATH=/usr/local/bin:/usr/bin:/bin \
+	setpriv --reuid "$U" --regid "$U" --init-groups "$@"

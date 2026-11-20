@@ -1,0 +1,10 @@
+[Unit]
+Description=Brain: avvio completato (azzera il contatore di U-Boot)
+After=multi-user.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/busybox devmem 0x800560a0 32 0
+
+[Install]
+WantedBy=multi-user.target

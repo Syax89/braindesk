@@ -1,0 +1,13 @@
+[Unit]
+Description=Brain: swap compresso in RAM
+DefaultDependencies=no
+After=systemd-modules-load.service
+Before=swap.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/brain-zram
+
+[Install]
+WantedBy=swap.target

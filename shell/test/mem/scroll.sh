@@ -1,0 +1,27 @@
+# griglia con molti riquadri: trascinamento, inerzia, tocco che ferma l'inerzia
+ENV="BRAINSHELL_EXTRA_TILES=14"
+scene() {
+	echo "wait 400"
+	echo "shot scroll-grid"
+	echo "stats"
+	echo "drag $GRID_SCROLL 10 16 0"
+	echo "wait 120"
+	echo "shot scroll-fling"
+	echo "wait 1500"
+	echo "shot scroll-rest"
+	echo "stats"
+	echo "drag $GRID_SCROLL 10 16 0"
+	echo "wait 60"
+	echo "tap $((W / 2)) 300 600"
+	echo "shot scroll-stopped"
+	echo "expect view=grid"
+	# di nuovo in cima (trascinamento all'ingiu'), poi Impostazioni
+	echo "drag $GRID_BACK 10 16 1500"
+	echo "drag $GRID_BACK 10 16 1500"
+	echo "shot scroll-top"
+	echo "tap $SET 900"
+	echo "drag $SCROLL 6 16 0"
+	echo "wait 1500"
+	echo "shot scroll-settings"
+	echo "expect view=settings"
+}

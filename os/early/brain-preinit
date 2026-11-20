@@ -1,0 +1,35 @@
+#!/bin/sh
+# brain-preinit: primo processo dopo il kernel (init=/usr/local/sbin/brain-preinit).
+# Fa partire subito l'interfaccia grafica e poi cede il posto a systemd, che
+# avvia il resto del sistema (rete USB, SSH, audio...) in parallelo.
+# Se qualcosa va storto si salta tutto e parte systemd come sempre.
+#
+# L'interfaccia: brain-shell-session (brainshell direttamente sul pannello,
+# senza X; X parte solo per le app esterne). Con /etc/brain-ui-x11, o se
+# manca, la sessione X di sempre: brain-ui (Xorg + JWM + brainshell-x11).
+# brain-shell-session stesso ripiega su brain-ui se il DRM non funziona.
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+ui=
+if [ -x /usr/local/sbin/brain-shell-session ] && [ -x /usr/local/bin/brainshell ] &&
+   [ ! -e /etc/brain-ui-x11 ]; then
+	ui=/usr/local/sbin/brain-shell-session
+elif [ -x /usr/local/sbin/brain-ui ]; then
+	ui=/usr/local/sbin/brain-ui
+fi
+if [ -n "$ui" ] && [ ! -e /etc/brain-noearlyui ]; then
+	mountpoint -q /proc || mount -t proc proc /proc
+	mountpoint -q /sys || mount -t sysfs sysfs /sys
+	mountpoint -q /run || mount -t tmpfs -o mode=755,nosuid,nodev tmpfs /run
+	# stesse opzioni di /etc/fstab: systemd lo trova gia' montato
+	mountpoint -q /tmp || mount -t tmpfs -o nosuid,nodev,size=16m tmpfs /tmp
+	setsid $ui </dev/null >/dev/null 2>&1 &
+	# la CPU e' una sola: il resto del sistema aspetta (al massimo 8 s)
+	# che l'interfaccia sia sullo schermo (o che il server X sia su, se si
+	# e' ripiegati su X), poi parte in parallelo
+	i=0
+	while [ $i -lt 80 ] && [ ! -e /tmp/xdg-user/brainshell-ready ] && [ ! -S /tmp/.X11-unix/X0 ]; do
+		sleep 0.1; i=$((i + 1))
+	done
+fi
+exec /sbin/init "$@"

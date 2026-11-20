@@ -1,0 +1,13 @@
+#!/bin/sh
+# brain-session: eseguito da xinit come root dentro il server grafico;
+# passa all'utente "user" e avvia la sua sessione (~/.xinitrc).
+U=user
+H=$(getent passwd $U | cut -d: -f6)
+xhost +SI:localuser:$U >/dev/null 2>&1
+echo "brain-session: X pronto a $(cut -d' ' -f1 /proc/uptime) s"
+R=/tmp/xdg-$U
+mkdir -p -m 700 $R && chown $U: $R
+cd "$H" || exit 1
+exec env -i HOME="$H" USER=$U LOGNAME=$U SHELL=/bin/bash DISPLAY=:0 LANG=C.UTF-8 \
+	XDG_RUNTIME_DIR=$R PATH=/usr/local/bin:/usr/bin:/bin \
+	setpriv --reuid $U --regid $U --init-groups /bin/sh "$H/.xinitrc"
