@@ -100,7 +100,7 @@ extern const int bs_napps;
 extern bs_view bs_view_settings, bs_view_clock, bs_view_calc, bs_view_stub, bs_view_demo;
 extern bs_view bs_view_notes, bs_view_music, bs_view_video;
 extern bs_view bs_view_files, bs_view_gallery;
-extern bs_view bs_view_term, bs_view_keys;
+extern bs_view bs_view_term, bs_view_keys, bs_view_time;
 
 /* ------------------------------------------------------------------ */
 /* Terminale (view_term.c)                                            */
@@ -349,6 +349,10 @@ int bs_child_watch(int pid, void (*cb)(int status, void *user), void *user);
 void bs_child_setup(int out_fd);
 /* id dell'app aperta nella home ("grid" se nessuna) */
 const char *bs_home_view_id(void);
+/* l'ora di sistema e' cambiata: la barra ridisegna subito e riallinea il minuto */
+void bs_bar_clock_changed(void);
+/* fuso orario nuovo per la shell e i suoi figli (TZ + tzset) */
+void bs_set_timezone(const char *zone);
 
 /* ------------------------------------------------------------------ */
 /* Parti della shell                                                  */

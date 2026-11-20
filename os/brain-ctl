@@ -6,6 +6,8 @@
 #   suspend [SECONDI]    sospende (risveglio: tasto, cavo USB o dopo SECONDI)
 #   rotate [0|1|2]       cambia orientamento (riavvia)
 #   screenshot           salva un PNG in ~/Immagini e ne stampa il percorso
+#   time ["AAAA-MM-GG HH:MM[:SS]"]  legge o imposta data e ora (anche l'RTC)
+#   timezone [Zona]      legge o imposta il fuso (es. Europe/Rome)
 #   poweroff | reboot
 #   dictionary           riavvia nel dizionario SHARP (serve togliere la microSD)
 set -e
@@ -21,21 +23,39 @@ brightness)
 		echo "$v" | sudo tee "$B/brightness" >/dev/null
 	fi ;;
 volume)
+	# 0-100 -> 0..130 dei 144 passi di "Playback" (0,5 dB l'uno) con lo
+	# "Speaker Boost" a +12 dB: misurato col microfono, piu' in alto
+	# l'altoparlante satura (distorsione 4% a 130, 40% a 144: gracchia)
+	MAX=130
 	if [ -z "$2" ]; then
-		amixer -c0 sget 'Playback' 2>/dev/null | sed -n 's/.*\[\([0-9]*\)%\].*/\1/p' | head -1
+		r=$(amixer -c0 sget 'Playback' 2>/dev/null | sed -n 's/.*Mono: \([0-9]*\) \[.*/\1/p' | head -1)
+		[ -n "$r" ] || exit 1
+		v=$(( (r * 100 + MAX / 2) / MAX )); [ "$v" -gt 100 ] && v=100; echo $v
 	else
-		amixer -q -c0 sset 'Playback' "$2%" 2>/dev/null
-		[ "$2" -gt 0 ] && amixer -q -c0 sset 'Speaker' on 2>/dev/null || true
+		v=$2; [ "$v" -gt 100 ] && v=100; [ "$v" -lt 0 ] && v=0
+		amixer -q -c0 sset 'Speaker Boost' 2 2>/dev/null || true
+		amixer -q -c0 sset 'Playback' $(( (v * MAX + 50) / 100 )) 2>/dev/null
+		[ "$v" -gt 0 ] && amixer -q -c0 sset 'Speaker' on 2>/dev/null || true
 	fi ;;
 screen)
 	# off|on: retroilluminazione (bl_power: 0 = accesa, 4 = spenta)
 	B=$(bl); [ -n "$B" ] || exit 0
 	case "$2" in off) v=4 ;; on) v=0 ;; *) exit 1 ;; esac
 	echo $v | sudo tee "$B/bl_power" >/dev/null ;;
+time)
+	if [ -z "$2" ]; then date '+%F %T'; exit 0; fi
+	# timedatectl aggiorna anche l'orologio hardware (RTC); senza, date
+	sudo timedatectl set-ntp false 2>/dev/null || true
+	sudo timedatectl set-time "$2" 2>/dev/null || sudo date -s "$2" >/dev/null ;;
+timezone)
+	if [ -z "$2" ]; then timedatectl show -p Timezone --value 2>/dev/null || cat /etc/timezone; exit 0; fi
+	[ -e "/usr/share/zoneinfo/$2" ] || { echo "zona sconosciuta: $2" >&2; exit 1; }
+	sudo timedatectl set-timezone "$2" 2>/dev/null || sudo ln -sf "/usr/share/zoneinfo/$2" /etc/localtime
+	echo "$2" | sudo tee /etc/timezone >/dev/null ;;
 suspend)    exec sudo /usr/local/sbin/brain-suspend $2 ;;
 rotate)     exec /usr/local/bin/brain-rotate $2 ;;
 screenshot) exec /usr/local/bin/brain-screenshot ;;
 poweroff)   sync; exec sudo systemctl poweroff ;;
 reboot)     sync; exec sudo systemctl reboot ;;
-*) echo "uso: brain-ctl brightness|volume [N] | rotate | screenshot | poweroff | reboot" >&2; exit 1 ;;
+*) echo "uso: brain-ctl brightness|volume [N] | time [T] | timezone [Z] | rotate | screenshot | poweroff | reboot" >&2; exit 1 ;;
 esac

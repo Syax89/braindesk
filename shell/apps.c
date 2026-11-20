@@ -27,6 +27,7 @@ const bs_app bs_apps[] = {
 	{ "demo",     "Campionario",  BUI_IC(apps, 40),     &bs_view_demo, NULL, BS_APP_HIDDEN },
 	/* Impostazioni -> Tasti */
 	{ "keys",     "Tasti",        BUI_IC(settings, 40), &bs_view_keys, NULL, BS_APP_HIDDEN },
+	{ "datetime", "Data e ora",   BUI_IC(clock, 40),    &bs_view_time, NULL, BS_APP_HIDDEN },
 };
 
 const int bs_napps = (int)(sizeof(bs_apps) / sizeof(bs_apps[0]));

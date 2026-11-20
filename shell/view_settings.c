@@ -108,6 +108,12 @@ static void on_vol(bui_widget *w, int final)
 	bs_set_volume(w->value, final);
 }
 
+static void on_time(bui_widget *w)
+{
+	(void)w;
+	bs_open("datetime");	/* Impostazioni -> Data e ora (view_time.c) */
+}
+
 static void on_keys(bui_widget *w)
 {
 	(void)w;
@@ -285,10 +291,13 @@ static void st_layout(bs_view *v, bui_rect a)
 	y += 12;
 
 	/* tasti del dizionario: una pagina a parte */
-	y = section(p, x, y, cw, "TASTI");
+	y = section(p, x, y, cw, "DISPOSITIVO");
 	card = bui_add_card(p, bui_r(x, y, cw, 0));
-	bui_add_row(p, bui_r(x, y, cw, 56), BUI_IC(apps, 24), "Tasti del dizionario", "Kokugo, Eiwaâ¦",
+	bui_add_row(p, bui_r(x, y, cw, 56), BUI_IC(apps, 24), "Tasti del dizionario", NULL,
 		    on_keys);
+	y += 56;
+	bui_add_row(p, bui_r(x, y, cw, 56), BUI_IC(clock, 24), "Data e ora", NULL,
+		    on_time);
 	y += 56;
 	card->r.h = y - card->r.y;
 	y1 = y + 12;

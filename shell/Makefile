@@ -22,7 +22,7 @@ SRC  = main.c apps.c bar.c home.c sys.c conf.c wmsel.c xapp.c idle_ev.c power.c 
        view_notes.c view_notes_edit.c view_music.c view_music_player.c view_music_tags.c \
        view_video.c media_scan.c media_icons.c \
        view_files.c view_files_text.c view_gallery.c view_gallery_viewer.c bs_img.c bs_work.c \
-       view_term.c vt.c keys.c view_keys.c \
+       view_term.c vt.c keys.c view_keys.c view_time.c \
        bui.c bui_core.c bui_comp.c bui_drm.c bui_evdev.c bui_mem.c bui_w.c bui_theme.c \
        gen/bui_fonts.c gen/bui_icons.c
 SRC_X11 = bui_x.c wm.c idle.c

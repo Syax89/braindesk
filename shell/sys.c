@@ -246,6 +246,14 @@ int bs_sys_storage(long long *total_bytes, long long *free_bytes)
 	return 0;
 }
 
+void bs_set_timezone(const char *zone)
+{
+	/* un valore diverso a ogni cambio: tzset() rilegge davvero la zona */
+	setenv("TZ", zone, 1);
+	tzset();
+	bs_bar_clock_changed();
+}
+
 void bs_fmt_date(char *buf, int len, int with_year /* stile */)
 {
 	static const char *const days[] = { "domenica", "luned\xC3\xAC", "marted\xC3\xAC",

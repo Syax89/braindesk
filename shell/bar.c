@@ -875,6 +875,16 @@ static void arm_minute(void)
 				       minute_tick, NULL);
 }
 
+void bs_bar_clock_changed(void)
+{
+	if (B.minute_timer)
+		bui_timer_del(B.minute_timer);
+	B.minute_timer = 0;
+	if (bs_screen_state() != BS_SCREEN_OFF)
+		arm_minute();
+	bs_notify(BS_EV_MINUTE);
+}
+
 static void minute_tick(void *user)
 {
 	(void)user;
