@@ -22,8 +22,8 @@ SRC  = main.c apps.c bar.c home.c sys.c conf.c wmsel.c xapp.c idle_ev.c power.c 
        view_notes.c view_notes_edit.c view_music.c view_music_player.c view_music_tags.c \
        view_video.c media_scan.c media_icons.c \
        view_files.c view_files_text.c view_gallery.c view_gallery_viewer.c bs_img.c bs_work.c \
-       view_term.c vt.c keys.c view_keys.c view_time.c i18n.c \
-       bui.c bui_core.c bui_comp.c bui_drm.c bui_evdev.c bui_mem.c bui_w.c bui_theme.c \
+       view_term.c vt.c keys.c view_keys.c view_time.c view_dict.c view_games.c i18n.c \
+       bui.c bui_fallback.c bui_core.c bui_comp.c bui_drm.c bui_evdev.c bui_mem.c bui_w.c bui_theme.c \
        gen/bui_fonts.c gen/bui_icons.c
 SRC_X11 = bui_x.c wm.c idle.c
 HDR  = bui.h bui_be.h bui_comp.h bui_evdev.h bui_x.h shell.h media.h batt_est.h gen/bui_assets.h vt.h \
@@ -32,8 +32,8 @@ HDR  = bui.h bui_be.h bui_comp.h bui_evdev.h bui_x.h shell.h media.h batt_est.h 
 
 WARN   = -Wall -Wextra -Wshadow -Wstrict-prototypes -Wmissing-prototypes
 CFLAGS = -std=gnu11 -O2 $(WARN)
-LIBS   = -pthread
-LIBS_X11 = -lX11 -lXext -pthread
+LIBS   = -pthread -lm
+LIBS_X11 = -lX11 -lXext -pthread -lm
 DEFS_X11 = -DBUI_HAVE_X11
 
 CC_ARMEL = arm-linux-gnueabi-gcc

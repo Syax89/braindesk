@@ -103,7 +103,7 @@ extern const int bs_napps;
 extern bs_view bs_view_settings, bs_view_clock, bs_view_calc, bs_view_stub, bs_view_demo;
 extern bs_view bs_view_notes, bs_view_music, bs_view_video;
 extern bs_view bs_view_files, bs_view_gallery;
-extern bs_view bs_view_term, bs_view_keys, bs_view_time;
+extern bs_view bs_view_term, bs_view_keys, bs_view_time, bs_view_dict, bs_view_games;
 
 /* ------------------------------------------------------------------ */
 /* Terminale (view_term.c)                                            */

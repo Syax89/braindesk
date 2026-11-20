@@ -23,6 +23,8 @@ const bs_app bs_apps[] = {
 	{ "music",    "Musica",       BUI_IC(music, 40),    &bs_view_music, NULL, 0 },
 	{ "video",    "Video",        BUI_IC(video, 40),    &bs_view_video, NULL, 0 },
 	{ "notes",    "Note",         BUI_IC(note, 40),     &bs_view_notes, NULL, 0 },
+	{ "dict",     "Dizionario",   BUI_IC(dict, 40),     &bs_view_dict, NULL, 0 },
+	{ "games",    "Giochi",       BUI_IC(games, 40),    &bs_view_games, NULL, 0 },
 	/* campionario del toolkit: brainshell --open demo */
 	{ "demo",     "Campionario",  BUI_IC(apps, 40),     &bs_view_demo, NULL, BS_APP_HIDDEN },
 	/* Impostazioni -> Tasti */

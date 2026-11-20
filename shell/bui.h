@@ -380,6 +380,9 @@ void bui_input_ignore_before(uint32_t t);
 void bui_set_key_hook(int (*hook)(const bui_key *k));
 /* traduce ogni testo intero che il toolkit disegna o misura (NULL: nessuna) */
 void bui_set_translator(const char *(*tr)(const char *s));
+/* glifo assente dal font precotto, disegnato dal font di sistema (bui_fallback.c);
+ * NULL se nemmeno quello lo ha. *bits riceve la maschera A8 (NULL: solo spazio) */
+const bui_glyph *bui_fallback_glyph(const bui_font *f, unsigned cp, const uint8_t **bits);
 /* ridisegna e reinvia tutte le finestre (il pannello puo' aver perso l'immagine) */
 void bui_redraw_all(void);
 /* porta a termine subito tutte le animazioni in corso */

@@ -56,7 +56,7 @@ microSD card; BrainDesk starts from there and focuses on three things only:
 | Area | Status |
 |---|---|
 | Touch interface (BrainShell) without X11, themes, animations | ✅ on the device |
-| Apps: Settings, Clock (stopwatch, timer), Calculator, File explorer, Gallery, Music, Video, Notes, Terminal | ✅ on the device |
+| Apps: Settings, Clock (stopwatch, timer), Calculator, File explorer, Gallery, Music, Video, Notes, Terminal, Dictionary, Games | ✅ on the device |
 | Native media player with PXP-accelerated video | ✅ 20 fps, 0 dropped frames |
 | Display: row-based updates, rotation, video overlay | ✅ |
 | Audio (speaker, microphone, headphones with detection) | ✅ |
@@ -67,6 +67,11 @@ microSD card; BrainDesk starts from there and focuses on three things only:
 | Rescue boot with the stock kernel (three resets) | ✅ |
 | Compressed swap in RAM (zram) | ✅ |
 | Dictionary keys (国語, 英和, Brain English, マイ辞書, 履歴) with shell functions: recent-apps switcher, quick settings, music play/pause, notes, screenshot, Onsei + key for brightness/volume; configurable in Settings → Keys | ✅ verified on the device (simulated key presses) |
+| Interface in Italian, English and Japanese (Settings → Appearance → Language); Japanese glyphs baked from IPAex Gothic, any other character drawn at run time from a system font | ✅ verified on the device |
+| Dictionary: Italian ↔ English, English ↔ Japanese (FreeDict, 376,000 Japanese entries), search as you type, romaji → kana input (`inu` → いぬ); install the data with `dict-tools/install-dicts.sh` | ✅ verified on the device |
+| Games: Memory, Fifteen, Tic-tac-toe against the Brain, Snake (touch, swipe or keys) | ✅ verified on the device |
+| Settings → Date and time: set time and date, choose the time zone (RTC kept in sync) | ✅ verified on the device |
+| Speaker no longer distorts at high volume (100 % now maps to the loudest clean level, measured with the microphone: 41.5 % → 4 % distortion) | ✅ measured on the device |
 | Native terminal (no X): PTY + built-in VT100/xterm emulator (256 colours/truecolor, scroll regions, alternate screen, UTF-8), 106×24 cells, 1000-line scrollback with touch scrolling, touch key bar; `st` under X kept as a fallback | ✅ opens instantly on the device |
 
 ## Numbers measured on the device
@@ -83,7 +88,7 @@ microSD card; BrainDesk starts from there and focuses on three things only:
 | 424×240 video at 20 fps | 15 fps (ffmpeg + X window) | **20 fps, 0 dropped**, A/V sync 0.3 ms |
 | Convert + scale one full-screen frame | 120 ms (CPU) | **6 ms** (PXP) |
 | Panel update: full screen / one line of text | 17 ms / 17 ms | 17 ms / **0.5 ms** |
-| App open animation | – | 6 frames in 150 ms (≈ 33 fps) |
+| App open animation | – | 8 frames, ≈ 45 fps |
 | CPU when idle | – | no wake-ups besides the minute tick of the clock |
 
 ## Architecture

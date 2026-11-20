@@ -156,6 +156,14 @@ static const struct iconspec icons[] = {
 	{ "sdcard",     "sd_card",            { 24 } },
 	{ "prev",       "chevron_left",       { 24 } },
 	{ "open",       "open_in_new",        { 24 } },
+	/* Giochi e Dizionario */
+	{ "games",      "sports_esports",     { 24, 40 } },
+	{ "dict",       "menu_book",          { 24, 40 } },
+	{ "search",     "search",             { 24 } },
+	{ "style",      "style",              { 24, 40 } },
+	{ "extension",  "extension",          { 24, 40 } },
+	{ "grid3",      "grid_3x3",           { 24, 40 } },
+	{ "gesture",    "gesture",            { 24, 40 } },
 };
 
 #define NFONTS ((int)(sizeof(fonts) / sizeof(fonts[0])))

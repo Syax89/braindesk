@@ -679,12 +679,16 @@ static int text_run(bui_canvas *c, const bui_font *f, int x, int y, const char *
 	while (s < end) {
 		unsigned cp = utf8_next(&s, end);
 		const bui_glyph *g = glyph_find(f, cp);
+		const uint8_t *bits = NULL;
 
+		/* non precotto: dal font di sistema (bui_fallback.c), poi '?' */
+		if (!g)
+			g = bui_fallback_glyph(f, cp, &bits);
 		if (!g && !(g = glyph_find(f, '?')))
 			continue;
 		pen += kern(f, prev, cp);
 		if (c && g->w)
-			mask_blit(c, x + ((pen + 32) >> 6) + g->bx, y - g->by, f->data + g->off,
+			mask_blit(c, x + ((pen + 32) >> 6) + g->bx, y - g->by, bits ? bits : f->data + g->off,
 				  g->w, g->h, g->w, col, 255, 0, 0);
 		pen += g->adv;
 		prev = cp;

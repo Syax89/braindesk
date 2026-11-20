@@ -85,5 +85,18 @@ extern const bui_icon bui_ic_audio_24;
 extern const bui_icon bui_ic_sdcard_24;
 extern const bui_icon bui_ic_prev_24;
 extern const bui_icon bui_ic_open_24;
+extern const bui_icon bui_ic_games_24;
+extern const bui_icon bui_ic_games_40;
+extern const bui_icon bui_ic_dict_24;
+extern const bui_icon bui_ic_dict_40;
+extern const bui_icon bui_ic_search_24;
+extern const bui_icon bui_ic_style_24;
+extern const bui_icon bui_ic_style_40;
+extern const bui_icon bui_ic_extension_24;
+extern const bui_icon bui_ic_extension_40;
+extern const bui_icon bui_ic_grid3_24;
+extern const bui_icon bui_ic_grid3_40;
+extern const bui_icon bui_ic_gesture_24;
+extern const bui_icon bui_ic_gesture_40;
 
 #endif
