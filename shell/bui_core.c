@@ -5,7 +5,7 @@
  *
  * Il ciclo dorme in poll() sui descrittori registrati (piu' quello del
  * server X col backend x11): a riposo il processo non consuma CPU. I
- * fotogrammi a ~30 fps esistono solo mentre c'e' un'animazione o un
+ * fotogrammi a ~45 fps esistono solo mentre c'e' un'animazione o un
  * trascinamento in corso.
  */
 #include <errno.h>
@@ -458,7 +458,11 @@ void bui_run(void)
 		run_timers(now);
 		if (C.nanim && (int32_t)(now - C.next_frame) >= 0) {
 			run_anims(now);
-			C.next_frame = now + BUI_FRAME_MS;
+			/* cadenza fissa: il tempo del disegno non allunga il passo;
+			 * se si e' rimasti indietro si riparte da adesso */
+			C.next_frame += BUI_FRAME_MS;
+			if ((int32_t)(now - C.next_frame) >= 0)
+				C.next_frame = now + BUI_FRAME_MS / 2;
 		}
 		timeout = C.be->flush(now);
 		if (C.quit)

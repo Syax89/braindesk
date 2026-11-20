@@ -715,7 +715,17 @@ void bui_text_box(bui_canvas *c, const bui_font *f, bui_rect r, const char *s, b
 	int w, x, y, len = -1;
 	const char *dots = NULL;
 
-	if (!s || !*s || !bui_rect_isect(r, c->clip, NULL))
+	if (!s || !*s)
+		return;
+	if (align & BUI_AL_TOP)
+		y = r.y + f->ascent;
+	else if (align & BUI_AL_BOTTOM)
+		y = r.y + r.h - f->descent;
+	else
+		y = r.y + (r.h + f->cap_h) / 2;
+	/* i glifi escono dalla scatola (discendenti di p, g...): si salta solo
+	 * se il clip non tocca le righe che il testo puo' davvero occupare */
+	if (!bui_rect_isect(bui_r(r.x, y - f->ascent, r.w, f->ascent + f->descent), c->clip, NULL))
 		return;
 	w = bui_text_width(f, s, -1);
 	if (w > r.w) {
@@ -744,12 +754,6 @@ void bui_text_box(bui_canvas *c, const bui_font *f, bui_rect r, const char *s, b
 		x = r.x + r.w - w;
 	else
 		x = r.x;
-	if (align & BUI_AL_TOP)
-		y = r.y + f->ascent;
-	else if (align & BUI_AL_BOTTOM)
-		y = r.y + r.h - f->descent;
-	else
-		y = r.y + (r.h + f->cap_h) / 2;
 	if (dots) {
 		int adv = (text_run(c, f, x, y, s, len, col) + 32) >> 6;
 

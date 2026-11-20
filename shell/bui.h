@@ -91,7 +91,8 @@ void bui_theme_set(int i);		/* chi chiama ridisegna le finestre */
 #define BUI_U		8	/* passo della griglia */
 #define BUI_TOUCH	56	/* lato minimo di un bersaglio per il dito */
 #define BUI_DRAG_SLOP	12	/* px di movimento prima che un tocco diventi trascinamento */
-#define BUI_FRAME_MS	33	/* ~30 fotogrammi al secondo mentre qualcosa si muove */
+#define BUI_FRAME_MS	22	/* ~45 fotogrammi al secondo mentre qualcosa si muove: il
+				 * pannello riceve un quadro intero in 17 ms (bui_comp) */
 
 /* ------------------------------------------------------------------ */
 /* Geometria                                                          */

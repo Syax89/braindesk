@@ -17,6 +17,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
+#include <unistd.h>
 
 #include "bui.h"
 #include "bui_be.h"
@@ -36,7 +38,19 @@ static struct {
 	bui_win *ptr;			/* finestra che riceve il tocco in corso */
 	uint32_t last_present;
 	int trace;
+	int stats;			/* /tmp/bui-stats presente: tempi dei fotogrammi */
+	unsigned st_n, st_px;
+	double st_paint, st_comp, st_pres, st_max;
+	uint32_t st_t0;
 } K;
+
+static double us_now(void)
+{
+	struct timespec t;
+
+	clock_gettime(CLOCK_MONOTONIC, &t);
+	return t.tv_sec * 1e6 + t.tv_nsec / 1e3;
+}
 
 static int layer(const bui_win *w)
 {
@@ -79,6 +93,7 @@ int bui_comp_init(int sw, int sh, bui_px *target, int stride,
 	K.scr.w = sw;
 	K.scr.h = sh;
 	K.trace = getenv("BUI_TRACE") != NULL;
+	K.stats = access("/tmp/bui-stats", F_OK) == 0;
 	return 0;
 }
 
@@ -228,22 +243,53 @@ int bui_comp_flush(uint32_t now)
 
 	if (bui__suspended() || !K.target || !any_dirty())
 		return -1;
-	/* al passo del pannello: un fotogramma ogni ~30 ms; il primo dopo una
+	/* al passo del pannello (17 ms per un quadro intero): un fotogramma ogni
+	 * BUI_FRAME_MS - 3 ms al massimo, cosi la copia precedente e finita; il primo dopo una
 	 * pausa (il "premuto" di un tocco) parte subito */
 	el = (int)(now - K.last_present);
 	if (K.last_present && el >= 0 && el < BUI_FRAME_MS - 3)
 		return BUI_FRAME_MS - 3 - el;
+	{
+	double t0 = K.stats ? us_now() : 0, t1 = 0, t2 = 0;
+
 	for (i = 0; i < K.nwins; i++)
 		if (K.wins[i]->mapped && K.wins[i]->ndirty)
 			paint_win(K.wins[i], now);
+	if (K.stats)
+		t1 = us_now();
 	n = K.scr.ndirty;
 	memcpy(rects, K.scr.dirty, sizeof(rects));
 	K.scr.ndirty = 0;
-	for (i = 0; i < n; i++)
+	for (i = 0; i < n; i++) {
 		composite(rects[i], K.target, K.stride, 0, 0, K.nwins);
+		K.st_px += (unsigned)(rects[i].w * rects[i].h);
+	}
+	if (K.stats)
+		t2 = us_now();
 	n = bui_comp_bands(rects, n, K.sw, BAND_GAP, bands);
 	if (n && K.present)
 		K.present(bands, n);
+	if (K.stats) {
+		double t3 = us_now();
+
+		if (!K.st_n || now - K.st_t0 > 3000) {
+			if (K.st_n > 1)
+				fprintf(stderr, "bui-stats: %u fotogrammi | disegno %.1f | comp %.1f | invio %.1f | max %.1f ms | %u px/fotogr.\n",
+					K.st_n, K.st_paint / K.st_n / 1e3, K.st_comp / K.st_n / 1e3,
+					K.st_pres / K.st_n / 1e3, K.st_max / 1e3, K.st_px / K.st_n);
+			K.st_n = 0;
+			K.st_paint = K.st_comp = K.st_pres = K.st_max = 0;
+			K.st_px = 0;
+			K.st_t0 = now;
+		}
+		K.st_n++;
+		K.st_paint += t1 - t0;
+		K.st_comp += t2 - t1;
+		K.st_pres += t3 - t2;
+		if (t3 - t0 > K.st_max)
+			K.st_max = t3 - t0;
+	}
+	}
 	K.last_present = now ? now : 1;
 	return -1;
 }
