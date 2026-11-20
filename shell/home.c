@@ -467,7 +467,7 @@ static void draw_search(bui_widget *w, bui_canvas *c, bui_rect r)
 	int tw;
 
 	(void)w;
-	snprintf(text, sizeof(text), "Cerca: %s", H.filter);
+	snprintf(text, sizeof(text), T("Cerca: %s"), H.filter);
 	bui_rrect(c, pill, 20, BUI_C_SURFACE2);
 	bui_rrect_line(c, pill, 20, 2, BUI_C_ACCENT);
 	bui_text_box(c, BUI_FONT_BODY_B, bui_r(pill.x + 18, pill.y, pill.w - 36, pill.h), text, BUI_C_TEXT,
@@ -548,7 +548,7 @@ static void order_save(void)
 /* il filtro corrisponde se una parola dell'etichetta inizia cosi' (solo ASCII) */
 static int filter_match(const char *label)
 {
-	const char *p = label;
+	const char *p = T(label);	/* si cerca nella lingua in cui le etichette si leggono */
 	int n = (int)strlen(H.filter), i;
 
 	if (!n)
@@ -1081,7 +1081,7 @@ static void open_app(const bs_app *a, int cy)
 	 * sceglie il programma, cioe' st in una sessione X come fino alla 0.3 */
 	if (a->view && a->argv && tx && !strcmp(tx, "x11")) {
 		if (bs_launch(a->argv, a->label) == 0) {
-			snprintf(msg, sizeof(msg), "Apertura di %s\xE2\x80\xA6", a->label);
+			snprintf(msg, sizeof(msg), T("Apertura di %s\xE2\x80\xA6"), T(a->label));
 			bui_toast(msg, 1800);
 		}
 		return;
@@ -1090,7 +1090,7 @@ static void open_app(const bs_app *a, int cy)
 		if (!a->argv)
 			return;
 		if (bs_launch(a->argv, a->label) == 0) {
-			snprintf(msg, sizeof(msg), "Apertura di %s\xE2\x80\xA6", a->label);
+			snprintf(msg, sizeof(msg), T("Apertura di %s\xE2\x80\xA6"), T(a->label));
 			bui_toast(msg, 1800);
 		}
 		return;

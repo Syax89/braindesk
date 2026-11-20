@@ -378,6 +378,8 @@ void bui_input_ignore_before(uint32_t t);
  * Ritorna 1 se l'ha usato. Riceve anche i rilasci BUI_K_RELEASED.
  */
 void bui_set_key_hook(int (*hook)(const bui_key *k));
+/* traduce ogni testo intero che il toolkit disegna o misura (NULL: nessuna) */
+void bui_set_translator(const char *(*tr)(const char *s));
 /* ridisegna e reinvia tutte le finestre (il pannello puo' aver perso l'immagine) */
 void bui_redraw_all(void);
 /* porta a termine subito tutte le animazioni in corso */

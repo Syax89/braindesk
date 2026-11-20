@@ -151,7 +151,7 @@ static void set_info(void)
 
 	b = p ? strrchr(p, '/') : NULL;
 	snprintf(V.name, sizeof(V.name), "%s", p ? (b ? b + 1 : p) : "");
-	n = snprintf(V.info, sizeof(V.info), "%d di %d", V.cur + 1, V.n);
+	n = snprintf(V.info, sizeof(V.info), T("%d di %d"), V.cur + 1, V.n);
 	if (s && s->state == ST_READY && n > 0 && n < (int)sizeof(V.info))
 		snprintf(V.info + n, sizeof(V.info) - (size_t)n, "  \xC2\xB7  %d\xC3\x97%d", s->img.src_w,
 			 s->img.src_h);
@@ -381,7 +381,7 @@ static void ask_delete(void)
 		.user = (void *)(intptr_t)V.gen,
 	};
 
-	snprintf(msg, sizeof(msg), "\xC2\xAB%s\xC2\xBB verr\xC3\xA0 eliminata definitivamente.", V.name);
+	snprintf(msg, sizeof(msg), T("\xC2\xAB%s\xC2\xBB verr\xC3\xA0 eliminata definitivamente."), V.name);
 	bui_dialog_open(&d);
 }
 

@@ -16,6 +16,9 @@
 /* codice di uscita quando il backend DRM non parte: brain-shell-session
  * ripiega allora sulla sessione X (os/early/brain-ui) */
 #define BS_EXIT_NODRM 75
+#define BS_EXIT_RESTART 76	/* riavviami subito (cambio di lingua) */
+/* chiude la shell in modo pulito chiedendo alla sessione di riavviarla */
+void bs_restart(void);
 
 /* ------------------------------------------------------------------ */
 /* Viste (app integrate)                                              */
@@ -199,6 +202,18 @@ int bs_sys_storage(long long *total_bytes, long long *free_bytes);
 /* Preferenze (conf.c): salvate in ~/.config/brainshell/config        */
 /* ------------------------------------------------------------------ */
 
+/* lingue (i18n.c): il codice e' scritto in italiano */
+enum { BS_LANG_IT, BS_LANG_EN, BS_LANG_JA, BS_NLANGS };
+extern int bs_lang;
+/* la traduzione di una frase italiana intera (se c'e'), altrimenti la frase */
+const char *bs_tr(const char *s);
+#define T(s) bs_tr(s)
+void bs_i18n_init(int lang);
+const char *bs_lang_code(int lang);
+int bs_lang_find(const char *code);
+const char *bs_month_name(int m, int abbrev);	/* 0..11 */
+const char *bs_weekday_initial(int i);		/* 0 = lunedi' */
+
 typedef struct bs_prefs {
 	int theme;		/* indice di bui_theme_get() */
 	int anim;		/* BUI_ANIM_FULL / _REDUCED / _NONE */
@@ -210,6 +225,7 @@ typedef struct bs_prefs {
 				 * schermo spento dopo 30 s, sospensione dopo 1 min */
 	char order[256];	/* id delle app nell'ordine della griglia, separati da virgole */
 	char hidden[256];	/* id delle app nascoste */
+	int lang;		/* BS_LANG_* */
 	char keys[5][24];	/* azioni dei tasti del dizionario: "switcher", "app:calc"... (keys.c) */
 } bs_prefs;
 

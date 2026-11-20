@@ -316,7 +316,7 @@ static void shot_done(int status, const char *out, void *user)
 		bui_toast("Schermata non riuscita", 3000);
 		return;
 	}
-	snprintf(msg, sizeof(msg), "Schermata salvata: %s", name ? name + 1 : out);
+	snprintf(msg, sizeof(msg), T("Schermata salvata: %s"), name ? name + 1 : out);
 	bui_toast(msg, 3500);
 }
 
@@ -600,16 +600,14 @@ int bs_notes_get(int i, const char **text, const char **when)
 
 static void cal_title(void)
 {
-	static const char *const months[] = { "Gennaio", "Febbraio", "Marzo", "Aprile", "Maggio",
-					      "Giugno", "Luglio", "Agosto", "Settembre", "Ottobre",
-					      "Novembre", "Dicembre" };
-
-	snprintf(B.cal_title, sizeof(B.cal_title), "%s %d", months[B.cal_m], B.cal_y);
+	if (bs_lang == BS_LANG_JA)
+		snprintf(B.cal_title, sizeof(B.cal_title), "%d\xE5\xB9\xB4%s", B.cal_y, bs_month_name(B.cal_m, 0));
+	else
+		snprintf(B.cal_title, sizeof(B.cal_title), "%s %d", bs_month_name(B.cal_m, 0), B.cal_y);
 }
 
 static void draw_month(bui_widget *w, bui_canvas *c, bui_rect r)
 {
-	static const char *const wd[7] = { "L", "M", "M", "G", "V", "S", "D" };
 	static const uint8_t mdays[12] = { 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 };
 	time_t now = time(NULL);
 	struct tm today, first;
@@ -629,7 +627,7 @@ static void draw_month(bui_widget *w, bui_canvas *c, bui_rect r)
 	if (B.cal_m == 1 && ((B.cal_y % 4 == 0 && B.cal_y % 100 != 0) || B.cal_y % 400 == 0))
 		n = 29;
 	for (i = 0; i < 7; i++)
-		bui_text_box(c, BUI_FONT_SMALL_B, bui_r(r.x + i * CAL_CELL_W, r.y, CAL_CELL_W, 24), wd[i],
+		bui_text_box(c, BUI_FONT_SMALL_B, bui_r(r.x + i * CAL_CELL_W, r.y, CAL_CELL_W, 24), bs_weekday_initial(i),
 			     i >= 5 ? BUI_C_ACCENT : BUI_C_TEXT3, BUI_AL_CENTER);
 	for (i = 0; i < n; i++) {
 		int cell = col0 + i;

@@ -256,8 +256,6 @@ static void stepper(bui_panel *p, int x, int y, int col, const char *caption, co
 
 static void build(void)
 {
-	static const char *const months[] = { "gen", "feb", "mar", "apr", "mag", "giu",
-					      "lug", "ago", "set", "ott", "nov", "dic" };
 	bui_panel *p = &V.p;
 	bui_rect a = V.area;
 	int y, i, w = a.w - 32, cx = a.w / 2, sw = a.w >= 640 ? 170 : 120;
@@ -306,7 +304,7 @@ static void build(void)
 	case PG_DATE:
 		y = header(p, "Imposta la data");
 		snprintf(V.num[2], sizeof(V.num[2]), "%d", V.dd);
-		snprintf(V.num[3], sizeof(V.num[3]), "%s", months[V.mo - 1]);
+		snprintf(V.num[3], sizeof(V.num[3]), "%s", bs_month_name(V.mo - 1, 1));
 		snprintf(V.num[4], sizeof(V.num[4]), "%d", V.yy);
 		stepper(p, cx - sw, y, 0, "GIORNO", V.num[2], 1);
 		stepper(p, cx, y, 1, "MESE", V.num[3], 0);

@@ -170,7 +170,7 @@ static void finish(void)
 			(unsigned)(bui_now() - A.t_launch), code);
 	/* partita male: il comando non c'e', sudo rifiuta, X non parte */
 	if (code == 127 || (code != 0 && !A.ready && ran < 5000)) {
-		snprintf(msg, sizeof(msg), "Impossibile avviare %s", A.label);
+		snprintf(msg, sizeof(msg), T("Impossibile avviare %s"), T(A.label));
 		bui_toast(msg, 3000);
 	}
 	bs_notify(BS_EV_WINDOWS);

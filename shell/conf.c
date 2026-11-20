@@ -93,6 +93,8 @@ void bs_conf_load(void)
 			bs_pref.off_s = seconds(v);
 		} else if (!strcmp(line, "sleep_after")) {
 			bs_pref.sleep_s = seconds(v);
+		} else if (!strcmp(line, "language")) {
+			bs_pref.lang = bs_lang_find(v);
 		} else if (!strcmp(line, "power_saver")) {
 			bs_pref.saver = atoi(v) != 0;
 		} else if (!strcmp(line, "order")) {
@@ -130,10 +132,11 @@ void bs_conf_flush(void)
 	n = snprintf(buf, sizeof(buf),
 		     "# brainshell: preferenze (riscritto dalla shell)\n"
 		     "theme=%s\nanimations=%s\ntiles=%s\nbattery_percent=%d\ndim=%d\noff=%d\n"
-		     "sleep_after=%d\npower_saver=%d\norder=%s\nhidden=%s\n",
+		     "sleep_after=%d\npower_saver=%d\nlanguage=%s\norder=%s\nhidden=%s\n",
 		     bui_theme_get(bs_pref.theme)->id, anim_names[bs_pref.anim],
 		     bs_pref.tile_style < 0 ? "theme" : tile_names[bs_pref.tile_style],
 		     bs_pref_battery_percent, bs_pref.dim_s, bs_pref.off_s, bs_pref.sleep_s, bs_pref.saver,
+		     bs_lang_code(bs_pref.lang),
 		     bs_pref.order, bs_pref.hidden);
 	if (n < 0 || n >= (int)sizeof(buf))
 		return;

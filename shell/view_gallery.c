@@ -413,7 +413,7 @@ static void set_count(void)
 	else if (G.n == 1)
 		snprintf(G.count, sizeof(G.count), "1 immagine");
 	else
-		snprintf(G.count, sizeof(G.count), "%d immagini%s", G.n, G.truncated ? " (le prime)" : "");
+		snprintf(G.count, sizeof(G.count), T("%d immagini%s"), G.n, G.truncated ? T(" (le prime)") : "");
 	if (G.count_w)
 		bui_widget_damage(G.count_w);
 }

@@ -176,12 +176,16 @@ static unsigned char *load(const char *path)
 	fseek(f, 0, SEEK_END);
 	n = ftell(f);
 	fseek(f, 0, SEEK_SET);
-	buf = malloc(n);
+	buf = malloc(n + 1);
 	if (fread(buf, 1, n, f) != (size_t)n)
 		exit(1);
+	buf[n] = 0;	/* i sorgenti di testo si leggono come stringhe */
 	fclose(f);
 	return buf;
 }
+
+/* caratteri giapponesi usati dalle traduzioni (i18n.c), presi da un secondo font */
+static int cjk_cps[4096], n_cjk;
 
 static int cmp_int(const void *a, const void *b)
 {
@@ -200,6 +204,8 @@ static int charset(int which, int *out)
 			out[n++] = i;
 		for (i = 0; cs_text_extra[i]; i++)
 			out[n++] = cs_text_extra[i];
+		for (i = 0; i < n_cjk; i++)
+			out[n++] = cjk_cps[i];
 		break;
 	case CS_KEYS:
 		for (i = 0; cs_keys[i]; i++)
@@ -252,12 +258,53 @@ static void emit_bytes(FILE *o, const unsigned char *p, int n)
 
 static long total_bytes;
 
+static unsigned char *cjk_ttf;
+static stbtt_fontinfo cjk_font;
+
+static void collect_cjk(const char *src)
+{
+	unsigned char *p = load(src), *q = p;
+	int i, j;
+
+	while (*q) {
+		int cp, n;
+
+		if (*q < 0x80) {
+			q++;
+			continue;
+		}
+		if ((*q & 0xE0) == 0xC0) {
+			cp = *q & 0x1F;
+			n = 1;
+		} else if ((*q & 0xF0) == 0xE0) {
+			cp = *q & 0x0F;
+			n = 2;
+		} else {
+			q++;
+			continue;
+		}
+		q++;
+		while (n-- && *q)
+			cp = (cp << 6) | (*q++ & 0x3F);
+		/* punteggiatura CJK, kana, ideogrammi, forme a larghezza piena */
+		if ((cp >= 0x3000 && cp <= 0x9FFF) || (cp >= 0xFF00 && cp <= 0xFFEF)) {
+			for (j = 0; j < n_cjk && cjk_cps[j] != cp; j++)
+				;
+			if (j == n_cjk && n_cjk < 4096)
+				cjk_cps[n_cjk++] = cp;
+		}
+	}
+	free(p);
+	(void)i;
+}
+
+
 static void bake_font(FILE *o, FILE *h, const char *dir, const struct fontspec *fs)
 {
 	char path[1024];
 	unsigned char *ttf, *data = NULL, lut[256];
 	stbtt_fontinfo f;
-	int cps[1024], n, i, j, asc, desc, gap, nk = 0, top = 0, bot = 0;
+	int cps[5120], n, i, j, asc, desc, gap, nk = 0, top = 0, bot = 0;
 	int *off, *gw, *gh, *gx, *gy, *adv;
 	long dlen = 0, dcap = 0;
 	float sc;
@@ -293,21 +340,36 @@ static void bake_font(FILE *o, FILE *h, const char *dir, const struct fontspec *
 
 	for (i = 0; i < n; i++) {
 		int g = stbtt_FindGlyphIndex(&f, cps[i]);
-		int a, lsb, w, hh;
+		int a, lsb, w, hh, fb = 0, bold = strstr(fs->file, "Bold") != NULL;
+		stbtt_fontinfo *ff = &f;
+		float fsc = sc;
 
+		/* glifi assenti da DejaVu (kana e kanji): dal font giapponese */
+		if (!g && cps[i] != 0x20 && cjk_ttf) {
+			int g2 = stbtt_FindGlyphIndex(&cjk_font, cps[i]);
+
+			if (g2) {
+				g = g2;
+				ff = &cjk_font;
+				fsc = stbtt_ScaleForMappingEmToPixels(&cjk_font, (float)fs->px);
+				fb = 1;
+			}
+		}
 		if (!g && cps[i] != 0x20)
 			fprintf(stderr, "bake: %s senza U+%04X\n", fs->name, cps[i]);
-		stbtt_GetGlyphHMetrics(&f, g, &a, &lsb);
-		stbtt_GetGlyphBitmapBox(&f, g, sc, sc, &x0, &y0, &x1, &y1);
+		stbtt_GetGlyphHMetrics(ff, g, &a, &lsb);
+		stbtt_GetGlyphBitmapBox(ff, g, fsc, fsc, &x0, &y0, &x1, &y1);
+		if (fb && bold)
+			x1++;		/* grassetto sintetico: un pixel in piu' */
 		w = x1 - x0;
 		hh = y1 - y0;
-		adv[i] = (int)floor(a * sc * 64.0 + 0.5);
+		adv[i] = (int)floor(a * fsc * 64.0 + 0.5) + (fb && bold ? 64 : 0);
 		off[i] = (int)dlen;
 		gw[i] = w;
 		gh[i] = hh;
 		gx[i] = x0;
 		gy[i] = -y0;		/* righe sopra la linea di base */
-		if (w > 0 && hh > 0) {
+		if (w > 0 && hh > 0 && !fb) {
 			if (-y0 > top)
 				top = -y0;
 			if (y1 > bot)
@@ -325,7 +387,20 @@ static void bake_font(FILE *o, FILE *h, const char *dir, const struct fontspec *
 			dcap = (dlen + w * hh) * 2 + 4096;
 			data = realloc(data, dcap);
 		}
-		stbtt_MakeGlyphBitmap(&f, data + dlen, w, hh, w, sc, sc, g);
+		if (fb && bold) {
+			/* il font giapponese non ha il grassetto: glifo + copia spostata di 1 px */
+			unsigned char *d = data + dlen;
+			int yy, xx;
+
+			memset(d, 0, (size_t)(w * hh));
+			stbtt_MakeGlyphBitmap(ff, d, w - 1, hh, w, fsc, fsc, g);
+			for (yy = 0; yy < hh; yy++)
+				for (xx = w - 1; xx > 0; xx--)
+					if (d[yy * w + xx - 1] > d[yy * w + xx])
+						d[yy * w + xx] = d[yy * w + xx - 1];
+		} else {
+			stbtt_MakeGlyphBitmap(ff, data + dlen, w, hh, w, fsc, fsc, g);
+		}
 		for (j = 0; j < w * hh; j++)
 			data[dlen + j] = lut[data[dlen + j]];
 		dlen += w * hh;
@@ -483,9 +558,19 @@ int main(int argc, char **argv)
 	FILE *o, *h;
 	int i;
 
-	if (argc != 5) {
-		fprintf(stderr, "uso: bake <dir DejaVu> <font icone> <codepoints> <dir uscita>\n");
+	if (argc != 5 && argc != 7) {
+		fprintf(stderr, "uso: bake <dir DejaVu> <font icone> <codepoints> <dir uscita> "
+				"[<font giapponese> <sorgente delle traduzioni>]\n");
 		return 1;
+	}
+	if (argc == 7) {
+		cjk_ttf = load(argv[5]);
+		if (!stbtt_InitFont(&cjk_font, cjk_ttf, stbtt_GetFontOffsetForIndex(cjk_ttf, 0))) {
+			fprintf(stderr, "bake: font non valido %s\n", argv[5]);
+			return 1;
+		}
+		collect_cjk(argv[6]);
+		fprintf(stderr, "  %d caratteri giapponesi da %s\n", n_cjk, argv[6]);
 	}
 	snprintf(path, sizeof(path), "%s/bui_assets.h", argv[4]);
 	h = fopen(path, "w");

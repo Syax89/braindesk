@@ -222,7 +222,7 @@ static void set_titles(void)
 		if (F.e[F.act].kind == K_DIR)
 			snprintf(F.sub, sizeof(F.sub), "Cartella");
 		else
-			snprintf(F.sub, sizeof(F.sub), "%s  \xC2\xB7  %s", kind_name(F.e[F.act].kind), F.p_size);
+			snprintf(F.sub, sizeof(F.sub), "%s  \xC2\xB7  %s", T(kind_name(F.e[F.act].kind)), F.p_size);
 		break;
 	case M_PROPS:
 		cpy(F.title, sizeof(F.title), F.act_name);
@@ -630,7 +630,7 @@ static void open_text(int idx, int sniff)
 	join(path, sizeof(path), F.cwd, F.e[idx].name);
 	cpy(F.act_name, sizeof(F.act_name), F.e[idx].name);
 	F.text_pending = 1;
-	snprintf(F.sub, sizeof(F.sub), "Apertura di %s\xE2\x80\xA6", F.act_name);
+	snprintf(F.sub, sizeof(F.sub), T("Apertura di %s\xE2\x80\xA6"), F.act_name);
 	if (F.sub_w)
 		bui_widget_damage(F.sub_w);
 	bs_text_load(path, bs_text_width_for(F.area.w), sniff, text_done, NULL);
@@ -647,7 +647,7 @@ static void open_media(int idx)
 	argv[1] = path;
 	argv[2] = NULL;
 	if (bs_launch(argv, "il lettore multimediale") == 0) {
-		snprintf(msg, sizeof(msg), "Apertura di %.60s\xE2\x80\xA6", F.e[idx].name);
+		snprintf(msg, sizeof(msg), T("Apertura di %.60s\xE2\x80\xA6"), F.e[idx].name);
 		bui_toast(msg, 1800);
 	}
 }
@@ -774,11 +774,11 @@ static void ask_delete(int idx)
 	if (F.e[idx].kind == K_DIR && !F.e[idx].is_link) {
 		d.title = "Eliminare la cartella?";
 		snprintf(msg, sizeof(msg),
-			 "\xC2\xAB%.120s\xC2\xBB e tutto il suo contenuto verranno eliminati definitivamente.",
+			 T("\xC2\xAB%.120s\xC2\xBB e tutto il suo contenuto verranno eliminati definitivamente."),
 			 F.act_name);
 	} else {
 		d.title = "Eliminare il file?";
-		snprintf(msg, sizeof(msg), "\xC2\xAB%.120s\xC2\xBB verr\xC3\xA0 eliminato definitivamente.",
+		snprintf(msg, sizeof(msg), T("\xC2\xAB%.120s\xC2\xBB verr\xC3\xA0 eliminato definitivamente."),
 			 F.act_name);
 	}
 	bui_dialog_open(&d);

@@ -404,7 +404,7 @@ void bs_battery_text(char *buf, int len)
 		bs_est_format(est, sizeof(est), m);
 		snprintf(buf, (size_t)len, "%d%% \xC2\xB7 %s", b->capacity, est);
 	} else {
-		snprintf(buf, (size_t)len, "%d%% \xC2\xB7 %s", b->capacity, bs_battery_status_text(b));
+		snprintf(buf, (size_t)len, "%d%% \xC2\xB7 %s", b->capacity, T(bs_battery_status_text(b)));
 	}
 }
 
@@ -437,12 +437,12 @@ void bs_power_battery(const bs_battery *old, const bs_battery *n)
 			.cancel = 0,
 		};
 
-		snprintf(msg, sizeof(msg), "Collega il cavo: carica al %d%%. Al 3%% il dispositivo si "
-			 "spegne da solo.", n->capacity);
+		snprintf(msg, sizeof(msg), T("Collega il cavo: carica al %d%%. Al 3%% il dispositivo si "
+			 "spegne da solo."), n->capacity);
 		bs_idlev_wake();
 		bui_dialog_open(&d);
 	} else if (n->capacity <= 15 && old->capacity > 15) {
-		snprintf(msg, sizeof(msg), "Batteria al %d%%: collega l'alimentazione", n->capacity);
+		snprintf(msg, sizeof(msg), T("Batteria al %d%%: collega l'alimentazione"), n->capacity);
 		bui_toast(msg, 5000);
 	}
 }

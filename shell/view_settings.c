@@ -192,6 +192,23 @@ static void on_tiles(bui_widget *w, int final)
 	bs_notify(BS_EV_THEME);
 }
 
+static void restart_ui(void *user)
+{
+	(void)user;
+	bs_restart();
+}
+
+/* la lingua: i testi si ricostruiscono tutti, si riavvia l'interfaccia (~0,2 s) */
+static void on_lang(bui_widget *w, int final)
+{
+	if (!final || w->value == bs_pref.lang)
+		return;
+	bs_pref.lang = w->value;
+	bs_conf_save();
+	bui_toast("Cambio della lingua\xE2\x80\xA6", 1500);
+	bui_timer_add(350, 0, restart_ui, NULL);
+}
+
 /* anteprima di un tema: fondo, una scheda, l'accento e una riga di testo */
 static void draw_swatch(bui_widget *w, bui_canvas *c, bui_rect r)
 {
@@ -329,6 +346,8 @@ static void st_layout(bs_view *v, bui_rect a)
 		       BUI_ANIM_FULL - bs_pref.anim, on_anim);
 	y = segs_block(p, x, y, cw, "Riquadri della home", "Tema\nPieni\nVetro\nContorno",
 		       bs_pref.tile_style + 1, on_tiles);
+	y = segs_block(p, x, y, cw, "Lingua", "Italiano\nEnglish\n\xE6\x97\xA5\xE6\x9C\xAC\xE8\xAA\x9E",
+		       bs_pref.lang, on_lang);
 	card->r.h = y - card->r.y;
 	y += 12;
 

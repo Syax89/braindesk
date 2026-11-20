@@ -140,9 +140,9 @@ void bs_key_describe(int key, char *buf, int len)
 	const bs_app *ap = app_by_id(app);
 
 	if (a == BS_KA_APP && ap)
-		snprintf(buf, (size_t)len, "Apri %s", ap->label);
+		snprintf(buf, (size_t)len, T("Apri %s"), T(ap->label));
 	else if (a == BS_KA_STANDARD)
-		snprintf(buf, (size_t)len, "Tasto normale (%s)", std_names[key]);
+		snprintf(buf, (size_t)len, T("Tasto normale (%s)"), std_names[key]);
 	else
 		snprintf(buf, (size_t)len, "%s", act_labels[a]);
 }

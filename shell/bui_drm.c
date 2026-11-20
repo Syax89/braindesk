@@ -494,6 +494,19 @@ static void dev_add(const char *path)
 
 		touch_cal(d, &c);
 		bui_touch_init(&d->touch, &c, touch_emit, d);
+		{
+			/* il kernel non ripete una coordinata uguale all'ultima: chi
+			 * apre il dispositivo parte dall'ultimo punto noto, altrimenti
+			 * un tocco nello stesso punto arriverebbe senza posizione */
+			struct input_absinfo ax, ay;
+
+			if (xioctl(d->fd, EVIOCGABS(ABS_X), &ax) == 0 &&
+			    xioctl(d->fd, EVIOCGABS(ABS_Y), &ay) == 0) {
+				d->touch.rx = ax.value;
+				d->touch.ry = ay.value;
+				d->touch.have_xy = 3;
+			}
+		}
 	}
 	dev_grab(d, 1);
 	bui_fd_add(fd, dev_readable, d);

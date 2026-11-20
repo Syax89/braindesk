@@ -166,7 +166,7 @@ static void build(void)
 			const char *label = bs_key_action_label(i);
 
 			if (i == BS_KA_STANDARD) {
-				snprintf(V.val[0], sizeof(V.val[0]), "Tasto normale (%s)", bs_key_std_name(V.key));
+				snprintf(V.val[0], sizeof(V.val[0]), T("Tasto normale (%s)"), bs_key_std_name(V.key));
 				label = V.val[0];
 			}
 			wd = bui_add_row(p, grid_row(i, BS_KA_COUNT, y0), i == cur ? BUI_IC(check, 24) : NULL, label,
@@ -183,7 +183,7 @@ static void build(void)
 		const char *app;
 		int act = bs_key_action(V.key, &app);
 
-		snprintf(V.title, sizeof(V.title), "%s: apri", bs_key_name(V.key));
+		snprintf(V.title, sizeof(V.title), T("%s: apri"), bs_key_name(V.key));
 		y0 = header(p, V.title);
 		for (i = 0, n = 0; i < bs_napps; i++)
 			n += !(bs_apps[i].flags & BS_APP_HIDDEN);

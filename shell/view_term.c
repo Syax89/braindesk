@@ -473,7 +473,7 @@ static void draw_text(bui_canvas *c, bui_rect r)
 		char s[48];
 		int w;
 
-		snprintf(s, sizeof(s), "storico \xE2\x88\x92%d", T.view_off);
+		snprintf(s, sizeof(s), T("storico \xE2\x88\x92%d"), T.view_off);
 		w = bui_text_width(BUI_FONT_SMALL_B, s, -1) + 20;
 		bui_fill(c, bui_r(T.text.x, T.text.y + T.text.h - 2, T.text.w, 2), BUI_C_ACCENT);
 		bui_rrect(c, bui_r(T.text.x + T.text.w - w - 8, T.text.y + T.text.h - 30, w, 24), 12, BUI_C_ACCENT);

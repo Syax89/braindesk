@@ -61,6 +61,8 @@ while :; do
 	t1=$(cut -d. -f1 /proc/uptime)
 	echo "brain-shell-session: brainshell uscito con $code a ${t1} s"
 	[ -e /run/brain-nodesktop ] && exit 0
+	# 76: la shell chiede di ripartire subito (cambio di lingua)
+	[ $code = 76 ] && continue
 	[ $code = 75 ] && fallback "backend DRM non disponibile"
 	if [ $code != 0 ] && [ $((t1 - t0)) -lt 10 ]; then fails=$((fails + 1)); else fails=0; fi
 	[ $fails -ge 3 ] && fallback "brainshell e' caduto 3 volte di fila"

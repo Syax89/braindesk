@@ -269,7 +269,7 @@ static void lap_row(bui_list *l, bui_canvas *c, int i, bui_rect r, unsigned flag
 	uint32_t prev = i + 1 < K.nlaps ? K.laps[i + 1] : 0;
 
 	(void)l;
-	snprintf(name, sizeof(name), "Giro %d", n);
+	snprintf(name, sizeof(name), T("Giro %d"), n);
 	fmt_ms(split, sizeof(split), K.laps[i] - prev, 1);
 	fmt_ms(total, sizeof(total), K.laps[i], 1);
 	bui_list_row(c, r, flags & BUI_F_FOCUS, NULL, name, total, split);

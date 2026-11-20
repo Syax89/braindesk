@@ -254,29 +254,6 @@ void bs_set_timezone(const char *zone)
 	bs_bar_clock_changed();
 }
 
-void bs_fmt_date(char *buf, int len, int with_year /* stile */)
-{
-	static const char *const days[] = { "domenica", "luned\xC3\xAC", "marted\xC3\xAC",
-					    "mercoled\xC3\xAC", "gioved\xC3\xAC", "venerd\xC3\xAC",
-					    "sabato" };
-	static const char *const months[] = { "gennaio", "febbraio", "marzo", "aprile", "maggio",
-					      "giugno", "luglio", "agosto", "settembre", "ottobre",
-					      "novembre", "dicembre" };
-	time_t t = time(NULL);
-	struct tm tm;
-
-	localtime_r(&t, &tm);
-	if (with_year == BS_DATE_SHORT)
-		snprintf(buf, (size_t)len, "%.3s %d %s", days[tm.tm_wday], tm.tm_mday, months[tm.tm_mon]);
-	else if (with_year)
-		snprintf(buf, (size_t)len, "%s %d %s %d", days[tm.tm_wday], tm.tm_mday,
-			 months[tm.tm_mon], tm.tm_year + 1900);
-	else
-		snprintf(buf, (size_t)len, "%s %d %s", days[tm.tm_wday], tm.tm_mday, months[tm.tm_mon]);
-	if (buf[0] >= 'a' && buf[0] <= 'z')
-		buf[0] -= 32;
-}
-
 /* ------------------------------------------------------------------ */
 /* processi figli                                                     */
 /* ------------------------------------------------------------------ */
@@ -457,7 +434,7 @@ static void reap(pid_t pid, int st)
 		if (code == 127 && (int32_t)(bui_now() - S.launch[i].t) < 5000) {
 			char msg[96];
 
-			snprintf(msg, sizeof(msg), "Impossibile avviare %s", S.launch[i].label);
+			snprintf(msg, sizeof(msg), T("Impossibile avviare %s"), T(S.launch[i].label));
 			bui_toast(msg, 3000);
 		}
 		return;

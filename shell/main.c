@@ -18,7 +18,31 @@
 
 #include "shell.h"
 
-static int ready;
+static int ready, restart;
+
+/* dopo un riavvio chiesto dalla shell si torna alla vista di prima */
+static void reopen_path(char *buf, size_t len)
+{
+	const char *r = getenv("XDG_RUNTIME_DIR");
+
+	snprintf(buf, len, "%s/brainshell-reopen", r && *r ? r : "/tmp");
+}
+
+void bs_restart(void)
+{
+	char path[256];
+	const char *id = bs_home_view_id();
+	FILE *f;
+
+	reopen_path(path, sizeof(path));
+	f = id && *id ? fopen(path, "we") : NULL;
+	if (f) {
+		fprintf(f, "%s\n", id);
+		fclose(f);
+	}
+	restart = 1;
+	bui_quit();
+}
 static struct timespec t_start;
 static bui_win *w_home, *w_bar;
 
@@ -187,6 +211,7 @@ int main(int argc, char **argv)
 	}
 	bui_set_state_query(state_query);
 	bs_conf_load();
+	bs_i18n_init(bs_pref.lang);
 	bs_prefs_apply();
 	bs_sys_init();
 	bs_power_init();	/* prima di idle: il suo filtro vede per primo il tasto */
@@ -203,6 +228,22 @@ int main(int argc, char **argv)
 	bs_wm_set_home(home, bar);
 	ready = 1;
 	bs_wm_refresh();
+	if (!open) {
+		static char again[32];
+		char path[256];
+		FILE *f;
+
+		reopen_path(path, sizeof(path));
+		f = fopen(path, "re");
+		if (f) {
+			if (fgets(again, sizeof(again), f)) {
+				again[strcspn(again, "\n")] = 0;
+				open = again;
+			}
+			fclose(f);
+			unlink(path);
+		}
+	}
 	if (open)
 		bs_open(open);
 	/* il timer scatta al primo giro del ciclo, dopo il primo disegno */
@@ -214,5 +255,5 @@ int main(int argc, char **argv)
 	bs_idle_shutdown();
 	bs_home_shutdown();
 	bui_shutdown();
-	return 0;
+	return restart ? BS_EXIT_RESTART : 0;
 }

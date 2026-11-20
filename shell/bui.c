@@ -692,8 +692,20 @@ static int text_run(bui_canvas *c, const bui_font *f, int x, int y, const char *
 	return pen;
 }
 
+/* traduzione dei testi interi (bui_set_translator): NULL = nessuna */
+static const char *(*translator)(const char *s);
+
+void bui_set_translator(const char *(*tr)(const char *s))
+{
+	translator = tr;
+}
+
+#define TR(s) (translator && (s) ? translator(s) : (s))
+
 int bui_text_width(const bui_font *f, const char *s, int len)
 {
+	if (len < 0)
+		s = TR(s);
 	return (text_run(NULL, f, 0, 0, s, len, 0) + 63) >> 6;
 }
 
@@ -702,6 +714,7 @@ int bui_text(bui_canvas *c, const bui_font *f, int x, int y, const char *s, bui_
 	/* fuori dal clip in verticale: niente da fare */
 	if (y + f->descent < c->clip.y || y - f->ascent >= c->clip.y + c->clip.h)
 		return 0;
+	s = TR(s);
 	return (text_run(c, f, x, y, s, -1, col) + 63) >> 6;
 }
 
@@ -717,6 +730,7 @@ void bui_text_box(bui_canvas *c, const bui_font *f, bui_rect r, const char *s, b
 
 	if (!s || !*s)
 		return;
+	s = TR(s);
 	if (align & BUI_AL_TOP)
 		y = r.y + f->ascent;
 	else if (align & BUI_AL_BOTTOM)
@@ -763,11 +777,21 @@ void bui_text_box(bui_canvas *c, const bui_font *f, bui_rect r, const char *s, b
 	}
 }
 
+static int cjk_lead(char ch)
+{
+	unsigned char u = (unsigned char)ch;
+
+	return (u >= 0xE3 && u <= 0xE9) || u == 0xEF;
+}
+
 int bui_text_wrap(bui_canvas *c, const bui_font *f, bui_rect r, const char *s, bui_px col,
 		  int line_h, int align)
 {
-	const char *end = s + strlen(s);
+	const char *end;
 	int y = r.y;
+
+	s = TR(s);
+	end = s + strlen(s);
 
 	if (line_h <= 0)
 		line_h = f->line_h;
@@ -779,14 +803,22 @@ int bui_text_wrap(bui_canvas *c, const bui_font *f, bui_rect r, const char *s, b
 		for (;;) {
 			const char *q = p;
 
-			while (q < end && *q != ' ' && *q != '\n')
-				q++;
+			/* una parola: fino allo spazio; un ideogramma o un kana
+			 * (U+3000-9FFF, forme a larghezza piena) vale da solo,
+			 * perche' il giapponese non separa le parole */
+			if (q < end && cjk_lead(*q))
+				q += 3;
+			else
+				while (q < end && *q != ' ' && *q != '\n' && !cjk_lead(*q))
+					q++;
+			if (q > end)
+				q = end;
 			if (bui_text_width(f, s, (int)(q - s)) > r.w && brk)
 				break;
 			brk = q;
 			if (q >= end || *q == '\n')
 				break;
-			p = q + 1;
+			p = *q == ' ' ? q + 1 : q;
 		}
 		stop = brk;
 		if (c && y + line_h > c->clip.y && y < c->clip.y + c->clip.h) {

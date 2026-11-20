@@ -62,7 +62,7 @@ static void on_select(bui_list *l, int i)
 	argv[2] = NULL;
 	ms_title(&lib.it[i], name, sizeof(name));
 	if (bs_launch(argv, "il lettore video") == 0) {
-		snprintf(msg, sizeof(msg), "Apertura di %s\xE2\x80\xA6", name);
+		snprintf(msg, sizeof(msg), T("Apertura di %s\xE2\x80\xA6"), name);
 		bui_toast(msg, 1800);
 	}
 }
