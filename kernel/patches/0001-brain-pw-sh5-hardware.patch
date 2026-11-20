@@ -1475,10 +1475,10 @@ index b25dda1f3..70a0bd4ee 100644
  obj-$(CONFIG_BATTERY_ACT8945A)	+= act8945a_charger.o
 diff --git a/drivers/power/supply/brain_battery.c b/drivers/power/supply/brain_battery.c
 new file mode 100644
-index 000000000..34a7418e8
+index 000000000..38f6134bb
 --- /dev/null
 +++ b/drivers/power/supply/brain_battery.c
-@@ -0,0 +1,993 @@
+@@ -0,0 +1,1017 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*
 + * Battery, USB power and battery charger for SHARP Brain (i.MX28)
@@ -1533,6 +1533,8 @@ index 000000000..34a7418e8
 +#define  CTRL_POLARITY_VBUSVALID	BIT(5)
 +#define  CTRL_ENIRQ_PSWITCH		BIT(17)
 +#define  CTRL_POLARITY_PSWITCH		BIT(18)
++#define  CTRL_PSWITCH_IRQ_SRC		BIT(19)
++#define  CTRL_PSWITCH_MID_TRAN		BIT(27)
 +#define  CTRL_PSWITCH_IRQ		BIT(20)
 +#define HW_POWER_5VCTRL			0x10
 +#define  CTRL5V_CHARGE_4P2_ILIMIT	GENMASK(17, 12)
@@ -1605,6 +1607,8 @@ index 000000000..34a7418e8
 +	struct notifier_block reboot_nb;
 +	struct input_dev *pwrkey;	/* the power switch (PSWITCH) */
 +	int pwrkey_irq;
++	struct delayed_work pwrkey_poll;	/* watches the release */
++	bool pwrkey_down;
 +	struct mutex lock;		/* charger state and registers */
 +	int vmin_uv, vmax_uv;
 +
@@ -2202,7 +2206,12 @@ index 000000000..34a7418e8
 + * Power switch. The i.MX28 PSWITCH pin latches PSWITCH_IRQ in HW_POWER_CTRL
 + * and raises interrupt 6 (shared with the 5 V detectors, which nothing here
 + * enables). POLARITY selects the edge: wait for the press, then for the
-+ * release, so userspace gets a normal KEY_POWER down/up pair. It is also
++ * release, so userspace gets a normal KEY_POWER down/up pair. POLARITY = 1
++ * fires on the press, 0 on the release. The PW-SH5 button pulls PSWITCH
++ * only to the mid (VDDXTAL) level, STS.PSWITCH = 01, so the interrupt must
++ * be detected on the mid-level transition (PSWITCH_MID_TRAN = 1). The
++ * pressed/released state is read back from STS rather than inferred from
++ * the polarity, so a missed edge cannot leave the key stuck. It is also
 + * the wake-up source for suspend: the keyboard is polled and cannot wake.
 + */
 +static irqreturn_t brain_pwrkey_irq(int irq, void *data)
@@ -2232,25 +2241,37 @@ index 000000000..34a7418e8
 +	if (!(ctrl & CTRL_PSWITCH_IRQ))
 +		return IRQ_NONE;
 +
-+	pressed = !(ctrl & CTRL_POLARITY_PSWITCH);
-+	/* now wait for the opposite edge */
-+	regmap_write(bb->power, HW_POWER_CTRL + (pressed ? REG_SET : REG_CLR),
-+		     CTRL_POLARITY_PSWITCH);
++	/*
++	 * Only the press is taken from the interrupt (POLARITY stays at
++	 * "pressed"): the release edge of a mid-level button is not reliably
++	 * latched, so while the key is down STS is polled every 30 ms.
++	 */
 +	regmap_write(bb->power, HW_POWER_CTRL + REG_CLR, CTRL_PSWITCH_IRQ);
-+
-+	/* a press shorter than the interrupt latency: report both edges */
 +	sts = brain_sts(bb);
-+	input_report_key(bb->pwrkey, KEY_POWER, 1);
-+	input_sync(bb->pwrkey);
-+	if (!pressed || !(sts & STS_PSWITCH)) {
-+		input_report_key(bb->pwrkey, KEY_POWER, 0);
++	pressed = sts & STS_PSWITCH;
++	if (!bb->pwrkey_down) {
++		bb->pwrkey_down = true;
++		input_report_key(bb->pwrkey, KEY_POWER, 1);
 +		input_sync(bb->pwrkey);
-+		if (pressed)	/* already released: back to waiting for a press */
-+			regmap_write(bb->power, HW_POWER_CTRL + REG_CLR,
-+				     CTRL_POLARITY_PSWITCH);
++		mod_delayed_work(system_wq, &bb->pwrkey_poll,
++				 pressed ? msecs_to_jiffies(30) : 0);
 +	}
 +	pm_wakeup_event(bb->dev, 0);
 +	return IRQ_HANDLED;
++}
++
++static void brain_pwrkey_poll(struct work_struct *w)
++{
++	struct brain_battery *bb = container_of(to_delayed_work(w),
++						struct brain_battery, pwrkey_poll);
++
++	if (brain_sts(bb) & STS_PSWITCH) {
++		schedule_delayed_work(&bb->pwrkey_poll, msecs_to_jiffies(30));
++		return;
++	}
++	bb->pwrkey_down = false;
++	input_report_key(bb->pwrkey, KEY_POWER, 0);
++	input_sync(bb->pwrkey);
 +}
 +
 +static int brain_pwrkey_init(struct brain_battery *bb)
@@ -2265,6 +2286,7 @@ index 000000000..34a7418e8
 +	bb->pwrkey = devm_input_allocate_device(dev);
 +	if (!bb->pwrkey)
 +		return -ENOMEM;
++	INIT_DELAYED_WORK(&bb->pwrkey_poll, brain_pwrkey_poll);
 +	bb->pwrkey->name = "Brain Power Button";
 +	bb->pwrkey->phys = "brain-pswitch/input0";
 +	input_set_capability(bb->pwrkey, EV_KEY, KEY_POWER);
@@ -2272,9 +2294,11 @@ index 000000000..34a7418e8
 +	if (ret)
 +		return ret;
 +
-+	/* start waiting for a press, with any stale latch cleared */
-+	regmap_write(bb->power, HW_POWER_CTRL + REG_CLR,
-+		     CTRL_PSWITCH_IRQ | CTRL_POLARITY_PSWITCH);
++	/* mid-level detector, start waiting for a press, stale latch cleared */
++	regmap_write(bb->power, HW_POWER_CTRL + REG_CLR, CTRL_PSWITCH_IRQ_SRC);
++	regmap_write(bb->power, HW_POWER_CTRL + REG_SET,
++		     CTRL_PSWITCH_MID_TRAN | CTRL_POLARITY_PSWITCH);
++	regmap_write(bb->power, HW_POWER_CTRL + REG_CLR, CTRL_PSWITCH_IRQ);
 +	ret = devm_request_threaded_irq(dev, irq, NULL, brain_pwrkey_irq,
 +					IRQF_ONESHOT | IRQF_SHARED,
 +					"brain-pswitch", bb);
