@@ -55,7 +55,7 @@ static struct {
 
 int bs_power_sleeping(void)
 {
-	return P.sleeping;
+	return P.sleeping || P.poweroff;	/* anche durante lo spegnimento */
 }
 
 int bs_power_menu_open(void)
@@ -158,13 +158,30 @@ static void menu_close(void)
 	P.menu = NULL;
 }
 
+/* lo spegnimento ordinato di systemd dura ~12 s su questa CPU: chi lo ha
+ * chiesto vede l'avviso, poi lo schermo si spegne subito e resta spento
+ * (i tocchi non lo riaccendono) mentre il sistema finisce da solo */
+static void blank_for_poweroff(void *user)
+{
+	(void)user;
+	bs_idlev_screen_off();
+}
+
+static void power_down(void)
+{
+	P.poweroff = 1;
+	bs_idlev_wake();
+	bs_conf_flush();
+	bs_ctl("poweroff", NULL, NULL);
+	bui_timer_add(1500, 0, blank_for_poweroff, NULL);
+}
+
 static void act_poweroff(bui_widget *w)
 {
 	(void)w;
 	menu_close();
-	bs_conf_flush();
-	bs_ctl("poweroff", NULL, NULL);
 	bui_toast("Spegnimento in corso\xE2\x80\xA6", 5000);
+	power_down();
 }
 
 static void act_reboot(bui_widget *w)
@@ -312,7 +329,7 @@ static int filter(int kind, const bui_key *k, int suspended)
 {
 	int st;
 
-	if (!P.sleeping && kind == BUI_IN_KEY && k && k->key == BUI_K_HOMEPAGE) {
+	if (!P.sleeping && !P.poweroff && kind == BUI_IN_KEY && k && k->key == BUI_K_HOMEPAGE) {
 		if (bs_xapp_state() != BS_XAPP_IDLE)
 			bs_xapp_stop();
 		else if (suspended)
@@ -325,8 +342,8 @@ static int filter(int kind, const bui_key *k, int suspended)
 	}
 
 	(void)suspended;
-	if (P.sleeping)
-		return 1;	/* niente arriva a nessuno mentre il sistema si sospende */
+	if (P.sleeping || P.poweroff)
+		return 1;	/* niente arriva a nessuno mentre il sistema si sospende o si spegne */
 	if (kind != BUI_IN_KEY || !k || (k->key != BUI_K_POWER && k->key != BUI_K_POWER_UP))
 		return 0;
 	if (k->key == BUI_K_POWER) {
@@ -405,11 +422,8 @@ void bs_power_battery(const bs_battery *old, const bs_battery *n)
 	/* a 3% (o se il kernel dice 0) uno spegnimento ordinato: sospendere
 	 * vorrebbe dire perdere tutto quando la batteria finisce nel sonno */
 	if (n->capacity <= 3) {
-		P.poweroff = 1;
-		bs_idlev_wake();
 		bui_toast("Batteria esaurita: spegnimento\xE2\x80\xA6", 5000);
-		bs_conf_flush();
-		bs_ctl("poweroff", NULL, NULL);
+		power_down();
 		return;
 	}
 	if (old->capacity < 0 || !discharging(old))

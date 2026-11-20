@@ -370,6 +370,11 @@ static int job_spawn(const char *const argv[], void (*done)(int, const char *, v
 	}
 	if (pid == 0) {
 		bs_child_setup(pfd[1]);
+		/* i lavori di servizio (luminosita', volume, batteria...) cedono
+		 * il passo all'interfaccia: da nice -5 a 10. A schermo fermo hanno
+		 * comunque tutta la CPU; durante un'animazione non le rubano
+		 * fotogrammi (prima apertura delle Impostazioni nel primo minuto) */
+		(void)nice(15);
 		execvp(argv[0], (char *const *)argv);
 		_exit(127);
 	}

@@ -451,6 +451,7 @@ void ms_scan(ms_lib *l)
 	pid = fork();
 	if (pid == 0) {
 		ms_child_reset();
+		(void)nice(15);	/* la scansione e' lavoro di fondo */
 		close(pfd[0]);
 		child_main(l, pfd[1]);
 	}

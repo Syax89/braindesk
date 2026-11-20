@@ -32,4 +32,9 @@ if [ -n "$ui" ] && [ ! -e /etc/brain-noearlyui ]; then
 		sleep 0.1; i=$((i + 1))
 	done
 fi
+# systemd e tutti i servizi che avvia ereditano una priorita' bassa (nice 10):
+# nel primo minuto udev, journald, dbus... lavorano a lungo su questa CPU,
+# e cosi' non tolgono fotogrammi all'interfaccia (nice -5, partita prima).
+# Quando l'interfaccia e' ferma hanno comunque tutta la CPU.
+[ -x /usr/bin/nice ] && exec /usr/bin/nice -n 10 /sbin/init "$@"
 exec /sbin/init "$@"

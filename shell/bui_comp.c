@@ -67,6 +67,7 @@ static bui_rect win_rect(const bui_win *w)
 	return bui_r(w->x, w->y, w->w, w->h);
 }
 
+int bui_stats_on(void) { return K.stats; }
 int bui_comp_screen_w(void) { return K.sw; }
 int bui_comp_screen_h(void) { return K.sh; }
 

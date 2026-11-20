@@ -8,11 +8,13 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
+#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
 #include <unistd.h>
+#include <sys/mman.h>
 
 #include "shell.h"
 
@@ -26,6 +28,55 @@ void bs_notify(int ev)
 		return;
 	bs_bar_notify(ev);
 	bs_home_notify(ev);
+}
+
+/*
+ * Codice e dati costanti della shell (font e icone compresi) e delle sue
+ * librerie restano in RAM: senza, la prima apertura di una vista legge il
+ * codice dalla microSD, lenta e contesa dal resto dell'avvio nel primo minuto,
+ * e lo stesso succede quando la memoria scarseggia e il kernel scarta pagine
+ * di file. Sono ~2 MB, solo mappature di file in sola lettura o eseguibili.
+ * Gira in un thread: il disco si legge senza fermare l'interfaccia.
+ */
+static void *lock_code(void *arg)
+{
+	char line[512];
+	FILE *f = fopen("/proc/self/maps", "re");
+	size_t total = 0;
+
+	(void)arg;
+	if (!f)
+		return NULL;
+	while (fgets(line, sizeof(line), f)) {
+		unsigned long a, b, off;
+		char perm[8], path[256] = "";
+
+		if (sscanf(line, "%lx-%lx %7s %lx %*s %*s %255s", &a, &b, perm, &off, path) < 4)
+			continue;
+		/* file veri (non [stack], [heap], dispositivi o memoria anonima),
+		 * senza scrittura: testo e costanti */
+		if (path[0] != '/' || perm[1] == 'w' || !strncmp(path, "/dev/", 5))
+			continue;
+		if (mlock((void *)a, b - a) == 0)
+			total += b - a;
+	}
+	fclose(f);
+	if (getenv("BRAINSHELL_TIMING"))
+		fprintf(stderr, "brainshell: %zu KB di codice fissati in RAM\n", total / 1024);
+	return NULL;
+}
+
+static void lock_code_async(void)
+{
+	pthread_t t;
+	pthread_attr_t at;
+
+	pthread_attr_init(&at);
+	pthread_attr_setstacksize(&at, 64 * 1024);
+	pthread_attr_setdetachstate(&at, PTHREAD_CREATE_DETACHED);
+	if (pthread_create(&t, &at, lock_code, NULL) != 0)
+		lock_code(NULL);
+	pthread_attr_destroy(&at);
 }
 
 static void after_first_frame(void *user)
@@ -61,6 +112,7 @@ static void after_first_frame(void *user)
 	bs_refresh_levels();
 	bs_wm_focus_home();
 	bs_idle_init();
+	lock_code_async();
 }
 
 static const char *const screen_names[] = { "on", "dim", "off" };

@@ -1121,9 +1121,17 @@ static void open_app(const bs_app *a, int cy)
 	H.head_cap = 0;
 	snprintf(H.title, sizeof(H.title), "%s", H.cur->title ? H.cur->title : a->label);
 	H.cur->area = bui_r(H.area.x, H.area.y + BUI_HEADER_H, H.area.w, H.area.h - BUI_HEADER_H);
-	if (H.cur->enter)
-		H.cur->enter(H.cur);
-	view_layout();
+	{
+		uint32_t t0 = bui_now(), t1;
+
+		if (H.cur->enter)
+			H.cur->enter(H.cur);
+		t1 = bui_now();
+		view_layout();
+		if (bui_stats_on())
+			fprintf(stderr, "bui-stats: apri %s: enter %u ms, layout %u ms\n", a->label,
+				t1 - t0, bui_now() - t1);
+	}
 	tr_start(0, cy);
 }
 

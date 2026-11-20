@@ -391,6 +391,8 @@ void bui_shutdown(void);		/* distrugge le finestre e chiude il display */
 void bui_sync(void);			/* attende che il server abbia eseguito tutto (solo misure) */
 /* ms, orologio monotono che conta anche il tempo in sospensione
  * (CLOCK_BOOTTIME): i timer scaduti durante il sonno scattano al risveglio */
+/* tempi dei fotogrammi su stderr (file /tmp/bui-stats all'avvio) */
+int bui_stats_on(void);
 uint32_t bui_now(void);
 int bui_screen_w(void);
 int bui_screen_h(void);
