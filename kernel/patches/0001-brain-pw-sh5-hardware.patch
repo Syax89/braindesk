@@ -1,5 +1,5 @@
 diff --git a/arch/arm/boot/dts/imx28-pwsh5.dts b/arch/arm/boot/dts/imx28-pwsh5.dts
-index ff387efc5..3ee414185 100644
+index ff387efc5..1db94867d 100644
 --- a/arch/arm/boot/dts/imx28-pwsh5.dts
 +++ b/arch/arm/boot/dts/imx28-pwsh5.dts
 @@ -93,7 +93,7 @@ &keyboard_gpio {
@@ -11,7 +11,7 @@ index ff387efc5..3ee414185 100644
  		<5 1  KEY_Q>,         /* Q */
  		<5 2 KEY_W>,          /* W */
  		<5 3 KEY_E>,          /* E */
-@@ -147,3 +147,92 @@ &keyboard_gpio {
+@@ -147,3 +147,106 @@ &keyboard_gpio {
  		<6 6 KEY_LEFTALT>,    /* Onsei */
  		<3 0 KEY_BACKSPACE>;  /* Backspace */
  };
@@ -29,6 +29,20 @@ index ff387efc5..3ee414185 100644
 + */
 +&usb0 {
 +	dr_mode = "peripheral";
++};
++
++/*
++ * Neither card goes away while the system runs: ssp0 is the soldered eMMC,
++ * ssp1 the microSD holding the root file system. Marked non-removable, the
++ * MMC core stops polling both every second (wake-ups at idle) and keeps
++ * the cards across suspend instead of re-detecting them.
++ */
++&ssp0 {
++	non-removable;
++};
++
++&ssp1 {
++	non-removable;
 +};
 +
 +&pxp {

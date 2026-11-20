@@ -11,3 +11,18 @@ CONFIG_BRAIN_PXP=y
 CONFIG_BLK_DEV=y
 CONFIG_ZSMALLOC=y
 CONFIG_ZRAM=y
+# avvio piu rapido: LZ4 si decomprime molto piu in fretta di gzip su ARM926
+# CONFIG_KERNEL_GZIP is not set
+CONFIG_KERNEL_LZ4=y
+# niente debug che costa memoria e tempo a ogni allocazione
+# CONFIG_SLUB_DEBUG is not set
+# CONFIG_DEBUG_MEMORY_INIT is not set
+# CONFIG_BLK_DEBUG_FS is not set
+# hardware assente sul PW-SH5: Wi-Fi, NAND/MTD, NFS
+# CONFIG_WIRELESS is not set
+# CONFIG_CFG80211 is not set
+# CONFIG_MAC80211 is not set
+# CONFIG_WLAN is not set
+# CONFIG_MTD is not set
+# CONFIG_NFS_FS is not set
+# CONFIG_NETWORK_FILESYSTEMS is not set
